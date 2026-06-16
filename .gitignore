@@ -5,7 +5,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.pytype/
 .coverage
+.coverage.*
 htmlcov/
 
 # Jupyter
@@ -27,6 +29,8 @@ ENV/
 # Environment and secret files
 .env
 .env.*
+!.env.example
+!.env.sample
 *.key
 *.pem
 
@@ -35,6 +39,7 @@ data/raw/
 data/processed/
 data/external/
 data/interim/
+!data/**/.gitkeep
 
 # Experiment outputs
 outputs/
@@ -45,6 +50,11 @@ checkpoints/
 wandb/
 lightning_logs/
 multirun/
+!outputs/**/.gitkeep
+!results/**/.gitkeep
+!runs/**/.gitkeep
+!logs/**/.gitkeep
+!checkpoints/**/.gitkeep
 
 # Hydra-generated output
 .hydra/
@@ -86,6 +96,8 @@ events.out.tfevents.*
 *.swo
 *~
 .cache/
+.tox/
+.nox/
 
 # Local editor settings
 .vscode/
