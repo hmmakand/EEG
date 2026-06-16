@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "braindecode-eeg-dev"
+version = "0.1.0"
+description = "EEG development workspace with Braindecode"
+requires-python = ">=3.11"
+dependencies = [
+    "braindecode>=1.5",
+    "mne>=1.12",
+    "numpy>=2.0",
+    "pandas>=3.0",
+    "scikit-learn>=1.7",
+    "matplotlib>=3.10",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipykernel",
+    "jupyterlab",
+]
+
+[tool.setuptools]
+py-modules = []

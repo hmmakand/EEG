@@ -1,0 +1,101 @@
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python packaging and build files
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment and secret files
+.env
+.env.*
+*.key
+*.pem
+
+# Large datasets
+data/raw/
+data/processed/
+data/external/
+data/interim/
+
+# Experiment outputs
+outputs/
+results/
+runs/
+logs/
+checkpoints/
+wandb/
+lightning_logs/
+multirun/
+
+# Hydra-generated output
+.hydra/
+
+# TensorBoard
+events.out.tfevents.*
+*.tfevents.*
+
+# Model checkpoints and serialized models
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.pkl
+*.pickle
+*.joblib
+
+# Large numerical and EEG data files
+*.npy
+*.npz
+*.mat
+*.h5
+*.hdf5
+*.edf
+*.bdf
+*.gdf
+*.fif
+*.set
+*.vhdr
+*.vmrk
+*.eeg
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+
+# Local editor settings
+.vscode/
+.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+
+# Local profiling and debugging outputs
+.prof/
+*.prof
+memory_profile/
