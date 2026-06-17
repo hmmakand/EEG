@@ -35,6 +35,10 @@ ENV/
 *.pem
 
 # Large datasets
+
+# MOABB/MNE dataset cache
+data/moabb/
+!data/moabb/.gitkeep
 data/raw/
 data/processed/
 data/external/

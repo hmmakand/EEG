@@ -1,0 +1,15 @@
+name: moabb
+dataset_name: BNCI2014_001
+data_dir: data/moabb
+subject_ids:
+  - 1
+split:
+  strategy: description
+  column: session
+  train_key: 0train
+  eval_key: 1test
+mapping:
+  left_hand: 0
+  right_hand: 1
+  feet: 2
+  tongue: 3

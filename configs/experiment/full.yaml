@@ -1,0 +1,10 @@
+# @package _global_
+# Full experiment preset: real BCI IV 2a data + dataset-specific preprocessing + EEGNet.
+defaults:
+  - override /dataset: bcic_iv_2a
+  - override /preprocessing: bcic_iv_2a
+  - override /model: eegnet
+  - override /training: default
+
+training:
+  max_epochs: 50
