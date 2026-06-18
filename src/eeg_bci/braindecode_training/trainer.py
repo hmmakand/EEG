@@ -7,9 +7,9 @@ from torch import nn
 from torch.utils.data import Dataset
 
 from eeg_bci.data.splitting import split_train_valid
-from eeg_bci.training.checkpointing import save_classifier_module
-from eeg_bci.training.classifier import build_eeg_classifier
-from eeg_bci.training.evaluation import latest_history_value, score_classifier
+from eeg_bci.braindecode_training.checkpointing import save_classifier_module
+from eeg_bci.braindecode_training.classifier import build_eeg_classifier
+from eeg_bci.braindecode_training.evaluation import latest_history_value, score_classifier
 
 
 def train_model(

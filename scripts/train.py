@@ -14,7 +14,7 @@ if str(SRC) not in sys.path:
 
 from eeg_bci.data.datasets import build_datasets
 from eeg_bci.models.factory import build_model
-from eeg_bci.training.trainer import train_model
+from eeg_bci.braindecode_training.trainer import train_model
 from eeg_bci.utils.seed import seed_everything
 
 
