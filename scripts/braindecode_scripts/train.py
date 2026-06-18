@@ -7,7 +7,7 @@ import hydra
 import torch
 from omegaconf import DictConfig, OmegaConf
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
@@ -18,7 +18,7 @@ from eeg_bci.braindecode_training.trainer import train_model
 from eeg_bci.utils.seed import seed_everything
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="config")
+@hydra.main(version_base="1.3", config_path="../../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     seed_everything(int(cfg.seed))
