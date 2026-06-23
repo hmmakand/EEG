@@ -14,9 +14,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from eeg_bci.data.datasets import build_datasets
+from eeg_bci.data.datasets import build_dataset_split
 from eeg_bci.models.factory import build_model
-from eeg_bci.braindecode_training.trainer import train_model
+from eeg_bci.braindecode_training.trainer import train_from_split_plan
 from eeg_bci.utils.seed import seed_everything
 
 
@@ -36,38 +36,28 @@ def main(cfg: DictConfig) -> None:
         if subject_id != "all":
             subject_cfg.subject_ids = [int(subject_id)]
 
-        train_set, test_set, dataset_info = build_datasets(
+        split_plan, dataset_info = build_dataset_split(
             subject_cfg,
             cfg.preprocessing,
             int(cfg.seed),
         )
         model = build_model(cfg.model, dataset_info)
         subject_output_dir = output_dir / f"subject_{subject_id}"
-        metrics = train_model(
+        metrics = train_from_split_plan(
             model,
-            train_set,
-            test_set,
+            split_plan,
             n_outputs=int(dataset_info.n_outputs),
             device=device,
-            max_epochs=int(cfg.training.max_epochs),
-            batch_size=int(cfg.training.batch_size),
-            learning_rate=float(cfg.training.learning_rate),
-            weight_decay=float(cfg.training.weight_decay),
-            num_workers=int(cfg.training.num_workers),
+            training_cfg=cfg.training,
             output_dir=subject_output_dir,
-            checkpoint_name=str(cfg.training.checkpoint_name),
-            validation_enabled=bool(cfg.training.validation.enabled),
-            validation_size=float(cfg.training.validation.valid_size),
-            validation_shuffle=bool(cfg.training.validation.shuffle),
-            seed=int(cfg.seed),
         )
         row = {"subject": subject_id, **metrics}
         results.append(row)
         print(f"subject={subject_id}: done")
         print(OmegaConf.to_yaml(row))
 
-    _write_results(output_dir / "benchmark_results.csv", results)
-    print(f"benchmark_results: {output_dir / 'benchmark_results.csv'}")
+    _write_results(output_dir / "within_subject_results.csv", results)
+    print(f"within_subject_results: {output_dir / 'within_subject_results.csv'}")
 
 
 def _copy_dataset_cfg(dataset_cfg: DictConfig) -> DictConfig:
@@ -91,9 +81,26 @@ def _subject_ids(dataset_cfg: DictConfig) -> Sequence[int | str]:
 
 
 def _result_fieldnames(results: list[dict[str, str | float | int]]) -> list[str]:
-    fieldnames = ["subject", "train_loss", "valid_acc", "test_acc"]
+    preferred = [
+        "subject",
+        "split_strategy",
+        "train_loss",
+        "train_acc",
+        "valid_loss",
+        "valid_acc",
+        "cv_acc_mean",
+        "cv_acc_std",
+        "best_score",
+        "best_score_std",
+        "best_train_score",
+        "best_train_score_std",
+        "best_params",
+        "test_acc",
+    ]
     present = {key for row in results for key in row}
-    return [fieldname for fieldname in fieldnames if fieldname in present]
+    ordered = [fieldname for fieldname in preferred if fieldname in present]
+    extras = sorted(present.difference(ordered))
+    return ordered + extras
 
 
 def _write_results(path: Path, results: list[dict[str, str | float | int]]) -> None:

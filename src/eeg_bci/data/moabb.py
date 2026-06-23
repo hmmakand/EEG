@@ -6,7 +6,7 @@ apply configured Braindecode preprocessors, create event windows, and return the
 windowed dataset plus shape metadata needed by the model factory.
 
 Use a single-subject config for quick real-data smoke tests. Use the full
-subject list with `scripts/braindecode_scripts/benchmark.py` for within-subject benchmark runs,
+subject list with `scripts/braindecode_scripts/train_eval_within_subjects.py` for within-subject training and evaluation runs,
 where each subject is trained/evaluated separately.
 """
 
@@ -32,7 +32,7 @@ def build_moabb_dataset(
 
     `dataset.subject_ids` controls which subjects are fetched. Passing one
     subject is useful for fast pipeline checks; passing all dataset subjects is
-    the expected setup for a full subject-wise benchmark.
+    the expected setup for a full within-subject run.
     """
 
     data_dir = resolve_data_dir(dataset_cfg.get("data_dir"))

@@ -1,3 +1,3 @@
-"""EEG-BCI benchmark package."""
+"""EEG-BCI training package."""
 
 __version__ = "0.1.0"

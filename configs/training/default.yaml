@@ -8,3 +8,16 @@ validation:
   enabled: false
   valid_size: 0.2
   shuffle: false
+cross_validation:
+  scoring: accuracy
+  n_jobs: 1
+grid_search:
+  scoring: accuracy
+  refit: true
+  n_jobs: 1
+  verbose: 1
+  error_score: raise
+  param_grid:
+    optimizer__lr:
+      - 0.00625
+      - 0.000625

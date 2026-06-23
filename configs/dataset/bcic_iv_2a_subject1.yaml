@@ -4,10 +4,18 @@ data_dir: data/moabb
 subject_ids:
   - 1
 split:
-  strategy: description
-  column: session
-  train_key: 0train
-  eval_key: 1test
+  strategy: session_grid_search_test
+  session:
+    column: session
+    train_key: 0train
+    test_key: 1test
+  validation:
+    valid_size: 0.2
+    shuffle: false
+  resampling:
+    method: holdout # kfold or holdout
+    valid_size: 0.2
+    shuffle: false
 mapping:
   left_hand: 0
   right_hand: 1

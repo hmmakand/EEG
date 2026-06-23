@@ -12,10 +12,18 @@ subject_ids:
   - 8
   - 9
 split:
-  strategy: description
-  column: session
-  train_key: 0train
-  eval_key: 1test
+  strategy: session_cross_validation_test
+  session:
+    column: session
+    train_key: 0train
+    test_key: 1test
+  validation:
+    valid_size: 0.2
+    shuffle: false
+  resampling:
+    method: kfold # kfold or holdout
+    n_splits: 5
+    shuffle: false
 mapping:
   left_hand: 0
   right_hand: 1

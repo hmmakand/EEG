@@ -1,23 +1,56 @@
-"""Dataset splitting utilities.
+"""Dataset splitting utilities built around Braindecode protocol splits.
 
-The project keeps the final test split separate from optional validation:
+For BCI Competition IV 2a / MOABB BNCI2014_001, Braindecode exposes the
+recording protocol in the dataset description. The important convention is:
 
-- Synthetic smoke-test datasets use a deterministic random train/test split.
-- Real EEG datasets can use Braindecode description-based train/test splitting,
-  such as BCI IV 2a where `session=0train` is training data and
-  `session=1test` is the final test data.
-- Optional validation is split only from the training set, never from the test set.
+- session=0train is the training pool.
+- session=1test is the final test set.
+
+All validation, cross-validation, and grid-search resampling must happen inside
+train_pool. The final test_set is never used for model selection.
+
+The random split helpers are kept for synthetic smoke-test datasets, but real
+Braindecode protocol datasets should use make_braindecode_protocol_split.
 """
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+from dataclasses import dataclass
+from typing import Any, Protocol, TypeAlias, cast
 
+import numpy as np
 import torch
 from omegaconf import DictConfig
+from sklearn.model_selection import BaseCrossValidator, KFold
 from torch.utils.data import Dataset, Subset, random_split
 
 from eeg_bci.data.adapters import BraindecodeLikeDataset, TensorDatasetFromBraindecode
+
+SESSION_TRAIN_TEST = "session_train_test"
+SESSION_TRAIN_VALID_TEST = "session_train_valid_test"
+SESSION_CROSS_VALIDATION_TEST = "session_cross_validation_test"
+SESSION_GRID_SEARCH_TEST = "session_grid_search_test"
+
+SESSION_SPLIT_STRATEGIES = {
+    SESSION_TRAIN_TEST,
+    SESSION_TRAIN_VALID_TEST,
+    SESSION_CROSS_VALIDATION_TEST,
+    SESSION_GRID_SEARCH_TEST,
+}
+
+Resampler: TypeAlias = KFold | BaseCrossValidator
+
+
+@dataclass(frozen=True)
+class SplitPlan:
+    """Resolved datasets and optional resampler for one split strategy."""
+
+    split_strategy: str
+    train_pool: Dataset
+    train_set: Dataset
+    valid_set: Dataset | None
+    test_set: Dataset
+    resampler: Resampler | None
 
 
 class SplittableBraindecodeDataset(Protocol):
@@ -30,6 +63,80 @@ class SizedDataset(Protocol):
     def __len__(self) -> int: ...
 
 
+class HoldoutSplit(BaseCrossValidator):
+    """One deterministic train/validation split for sklearn CV APIs."""
+
+    def __init__(self, *, valid_size: float, shuffle: bool, seed: int) -> None:
+        self.valid_size = valid_size
+        self.shuffle = shuffle
+        self.seed = seed
+
+    def get_n_splits(self, X: Any = None, y: Any = None, groups: Any = None) -> int:
+        return 1
+
+    def split(self, X: Any, y: Any = None, groups: Any = None):
+        train_len, _ = _split_lengths(len(X), holdout_size=self.valid_size)
+        indices = np.arange(len(X))
+        if self.shuffle:
+            rng = np.random.default_rng(self.seed)
+            rng.shuffle(indices)
+        yield indices[:train_len], indices[train_len:]
+
+
+def make_braindecode_protocol_split(
+    dataset: BraindecodeLikeDataset,
+    split_cfg: DictConfig,
+    *,
+    seed: int,
+) -> SplitPlan:
+    """Create a split plan from a Braindecode description/session protocol."""
+
+    split_strategy = _session_split_strategy(split_cfg)
+    train_pool, test_set = split_by_description(dataset, split_cfg)
+
+    if split_strategy == SESSION_TRAIN_TEST:
+        return SplitPlan(
+            split_strategy=split_strategy,
+            train_pool=train_pool,
+            train_set=train_pool,
+            valid_set=None,
+            test_set=test_set,
+            resampler=None,
+        )
+
+    if split_strategy == SESSION_TRAIN_VALID_TEST:
+        train_set, valid_set = split_train_valid(
+            train_pool,
+            valid_size=_validation_size(split_cfg),
+            shuffle=_validation_shuffle(split_cfg),
+            seed=seed,
+        )
+        return SplitPlan(
+            split_strategy=split_strategy,
+            train_pool=train_pool,
+            train_set=train_set,
+            valid_set=valid_set,
+            test_set=test_set,
+            resampler=None,
+        )
+
+    if split_strategy in {SESSION_CROSS_VALIDATION_TEST, SESSION_GRID_SEARCH_TEST}:
+        resampler = make_resampler(split_cfg, seed=seed)
+        return SplitPlan(
+            split_strategy=split_strategy,
+            train_pool=train_pool,
+            train_set=train_pool,
+            valid_set=None,
+            test_set=test_set,
+            resampler=resampler,
+        )
+
+    available = ", ".join(sorted(SESSION_SPLIT_STRATEGIES))
+    raise ValueError(
+        f"Unsupported session split strategy {split_strategy}. Available: {available}."
+    )
+
+
 def split_train_test(
     dataset: BraindecodeLikeDataset,
     dataset_cfg: DictConfig,
@@ -39,10 +146,12 @@ def split_train_test(
     """Split a dataset into training and final test sets."""
 
     split_cfg = dataset_cfg.get("split", None)
-    strategy = str(split_cfg.get("strategy", "random")) if split_cfg is not None else "random"
+    strategy = _configured_strategy(split_cfg)
 
-    if strategy == "description":
-        return split_by_description(dataset, split_cfg)
+    if strategy in SESSION_SPLIT_STRATEGIES or strategy == "description":
+        split_plan = make_braindecode_protocol_split(dataset, split_cfg, seed=seed)
+        return split_plan.train_pool, split_plan.test_set
+
     if strategy == "random":
         test_size = (
             float(split_cfg.get("test_size", dataset_cfg.get("test_size", 0.2)))
@@ -51,7 +160,7 @@ def split_train_test(
         )
         return split_random_train_test(dataset, test_size=test_size, seed=seed)
 
-    raise ValueError(f"Unsupported split strategy '{strategy}'.")
+    raise ValueError(f"Unsupported split strategy {strategy}.")
 
 
 def split_train_eval(
@@ -60,7 +169,7 @@ def split_train_eval(
     *,
     seed: int,
 ) -> tuple[Dataset, Dataset]:
-    """Backward-compatible alias for `split_train_test`."""
+    """Backward-compatible alias for split_train_test."""
 
     return split_train_test(dataset, dataset_cfg, seed=seed)
 
@@ -91,11 +200,7 @@ def split_train_valid(
     seed: int,
     shuffle: bool,
 ) -> tuple[Dataset, Dataset]:
-    """Split a training set into inner-training and validation subsets.
-
-    For EEG/time-series experiments, prefer `shuffle=False` so nearby correlated
-    windows are not randomly mixed across training and validation.
-    """
+    """Split a training set into inner-training and validation subsets."""
 
     sized_train_set = cast(SizedDataset, train_set)
     train_len, valid_len = _split_lengths(len(sized_train_set), holdout_size=valid_size)
@@ -118,20 +223,22 @@ def split_train_valid(
 def split_by_description(
     dataset: BraindecodeLikeDataset, split_cfg: DictConfig
 ) -> tuple[Dataset, Dataset]:
-    """Split using Braindecode dataset description metadata.
+    """Split a Braindecode dataset using description metadata."""
 
-    Braindecode datasets carry a `description` table and expose `split()`,
-    allowing protocol-aware splits by fields such as `subject`, `session`, or
-    `run`. For BCI IV 2a, the default config uses `session` with `0train` and
-    `1test`.
-    """
-
-    column = str(split_cfg.column)
-    train_key = str(split_cfg.train_key)
-    test_key = str(split_cfg.eval_key)
+    session_cfg = _section(split_cfg, "session")
+    column = str(session_cfg.get("column", split_cfg.get("column", "session")))
+    train_key = str(session_cfg.get("train_key", split_cfg.get("train_key", "0train")))
+    test_key = str(
+        session_cfg.get(
+            "test_key",
+            split_cfg.get("test_key", split_cfg.get("eval_key", "1test")),
+        )
+    )
 
     if not hasattr(dataset, "split"):
-        raise TypeError("Description-based splitting requires a Braindecode dataset with split().")
+        raise TypeError(
+            "Description-based splitting requires a Braindecode dataset with split()."
+        )
 
     splittable = cast(SplittableBraindecodeDataset, dataset)
     splits = splittable.split(column)
@@ -140,7 +247,7 @@ def split_by_description(
         available = ", ".join(sorted(splits))
         missing = ", ".join(missing_keys)
         raise KeyError(
-            f"Split key(s) not found for column '{column}': {missing}. "
+            f"Split keys not found for column {column}: {missing}. "
             f"Available keys: {available}."
         )
 
@@ -148,6 +255,65 @@ def split_by_description(
         TensorDatasetFromBraindecode(splits[train_key]),
         TensorDatasetFromBraindecode(splits[test_key]),
     )
+
+
+def make_resampler(split_cfg: DictConfig, *, seed: int) -> Resampler:
+    """Create the resampler used inside the training pool."""
+
+    resampling_cfg = _section(split_cfg, "resampling")
+    method = str(resampling_cfg.get("method", "kfold"))
+    shuffle = bool(resampling_cfg.get("shuffle", split_cfg.get("shuffle", False)))
+
+    if method == "kfold":
+        n_splits = int(resampling_cfg.get("n_splits", split_cfg.get("n_splits", 5)))
+        if n_splits < 2:
+            raise ValueError("n_splits must be at least 2.")
+        random_state = seed if shuffle else None
+        return KFold(n_splits=n_splits, shuffle=shuffle, random_state=random_state)
+
+    if method == "holdout":
+        valid_size = float(resampling_cfg.get("valid_size", _validation_size(split_cfg)))
+        return HoldoutSplit(valid_size=valid_size, shuffle=shuffle, seed=seed)
+
+    raise ValueError(f"Unsupported resampling method {method}.")
+
+
+def _validation_size(split_cfg: DictConfig) -> float:
+    validation_cfg = _section(split_cfg, "validation")
+    return float(
+        validation_cfg.get(
+            "valid_size",
+            split_cfg.get("valid_size", split_cfg.get("validation_size", 0.2)),
+        )
+    )
+
+
+def _validation_shuffle(split_cfg: DictConfig) -> bool:
+    validation_cfg = _section(split_cfg, "validation")
+    return bool(
+        validation_cfg.get(
+            "shuffle",
+            split_cfg.get("shuffle", split_cfg.get("validation_shuffle", False)),
+        )
+    )
+
+
+def _section(split_cfg: DictConfig, name: str) -> DictConfig:
+    value = split_cfg.get(name, None)
+    return value if isinstance(value, DictConfig) else split_cfg
+
+
+def _configured_strategy(split_cfg: DictConfig | None) -> str:
+    if split_cfg is None:
+        return "random"
+    return str(split_cfg.get("split_strategy", split_cfg.get("strategy", "random")))
+
+
+def _session_split_strategy(split_cfg: DictConfig) -> str:
+    strategy = _configured_strategy(split_cfg)
+    if strategy == "description":
+        return SESSION_TRAIN_TEST
+    return strategy
 
 
 def _split_lengths(total_len: int, *, holdout_size: float) -> tuple[int, int]:
