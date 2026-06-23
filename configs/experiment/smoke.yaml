@@ -3,7 +3,7 @@
 defaults:
   - override /dataset: bcic_iv_2a_subject1
   - override /preprocessing: bcic_iv_2a
-  - override /model: eegnet
+  - override /model: shallowfbcspnet
   - override /training: default
 
 training:
