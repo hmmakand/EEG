@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,11 @@ from torch.utils.data import Dataset
 
 from eeg_bci.braindecode_training.checkpointing import save_classifier_module
 from eeg_bci.braindecode_training.classifier import build_eeg_classifier
-from eeg_bci.braindecode_training.evaluation import latest_history_value, score_classifier
+from eeg_bci.braindecode_training.evaluation import (
+    latest_history_value,
+    score_classifier,
+    score_classifier_by_description,
+)
 from eeg_bci.data.splitting import SESSION_CROSS_VALIDATION_TEST
 from eeg_bci.data.splitting import SESSION_GRID_SEARCH_TEST
 from eeg_bci.data.splitting import SESSION_TRAIN_TEST
@@ -137,6 +142,7 @@ def _train_once(
     train_loss = latest_history_value(classifier, "train_loss")
     train_acc = latest_history_value(classifier, "train_accuracy")
     save_classifier_module(classifier, output_dir, str(training_cfg.checkpoint_name))
+    subject_results_path = _write_subject_test_results(classifier, test_set, output_dir)
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_strategy,
@@ -147,8 +153,12 @@ def _train_once(
     if valid_set is not None:
         metrics["valid_loss"] = latest_history_value(classifier, "valid_loss")
         metrics["valid_acc"] = latest_history_value(classifier, "valid_accuracy")
+    if subject_results_path is not None:
+        metrics["subject_test_results"] = str(subject_results_path)
 
     print(f"test_acc={test_acc:.4f}")
+    if subject_results_path is not None:
+        print(f"subject_test_results={subject_results_path}")
     return metrics
 
 
@@ -181,6 +191,11 @@ def _train_with_cross_validation(
     train_loss = latest_history_value(final_classifier, "train_loss")
     train_acc = latest_history_value(final_classifier, "train_accuracy")
     save_classifier_module(final_classifier, output_dir, str(training_cfg.checkpoint_name))
+    subject_results_path = _write_subject_test_results(
+        final_classifier,
+        split_plan.test_set,
+        output_dir,
+    )
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_plan.split_strategy,
@@ -191,9 +206,13 @@ def _train_with_cross_validation(
         "test_acc": test_acc,
     }
     metrics.update(_fold_score_metrics("cv_acc", cv_scores))
+    if subject_results_path is not None:
+        metrics["subject_test_results"] = str(subject_results_path)
     cv_acc_mean = float(metrics["cv_acc_mean"])
     print(f"cv_acc_mean={cv_acc_mean:.4f}")
     print(f"test_acc={test_acc:.4f}")
+    if subject_results_path is not None:
+        print(f"subject_test_results={subject_results_path}")
     return metrics
 
 
@@ -229,6 +248,11 @@ def _train_with_grid_search(
     train_loss = latest_history_value(best_classifier, "train_loss")
     train_acc = latest_history_value(best_classifier, "train_accuracy")
     save_classifier_module(best_classifier, output_dir, str(training_cfg.checkpoint_name))
+    subject_results_path = _write_subject_test_results(
+        best_classifier,
+        split_plan.test_set,
+        output_dir,
+    )
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_plan.split_strategy,
@@ -239,10 +263,36 @@ def _train_with_grid_search(
         "test_acc": test_acc,
     }
     metrics.update(_grid_search_summary_metrics(search.cv_results_, int(search.best_index_)))
+    if subject_results_path is not None:
+        metrics["subject_test_results"] = str(subject_results_path)
     best_score = float(metrics["best_score"])
     print(f"best_score={best_score:.4f}")
     print(f"test_acc={test_acc:.4f}")
+    if subject_results_path is not None:
+        print(f"subject_test_results={subject_results_path}")
     return metrics
+
+
+def _write_subject_test_results(
+    classifier: Any,
+    test_set: Dataset,
+    output_dir: Path,
+) -> Path | None:
+    rows = score_classifier_by_description(
+        classifier,
+        test_set,
+        description_key="subject",
+    )
+    if len(rows) < 2:
+        return None
+
+    path = output_dir / "subject_pooled_test_results.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=["subject", "n_windows", "test_acc"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 def _build_classifier(

@@ -12,7 +12,7 @@ subject_ids:
   - 8
   - 9
 split:
-  strategy: session_cross_validation_test
+  strategy: session_train_test
   session:
     column: session
     train_key: 0train
