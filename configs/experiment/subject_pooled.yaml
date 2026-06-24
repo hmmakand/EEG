@@ -1,0 +1,15 @@
+# @package _global_
+# Subject-pooled preset: one model trained on all configured subjects' 0train
+# sessions and evaluated on those same subjects' 1test sessions.
+defaults:
+  - override /dataset: bcic_iv_2a
+  - override /preprocessing: bcic_iv_2a
+  - override /model: eegnet
+  - override /training: default
+
+dataset:
+  split:
+    strategy: session_train_test
+
+training:
+  max_epochs: 2

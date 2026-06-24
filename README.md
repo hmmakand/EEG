@@ -21,6 +21,7 @@ MOABB/MNE datasets are downloaded under `data/moabb` by default for project-loca
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke training.max_epochs=10 model.params.drop_prob=0.4
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
 python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
 ```
 
 Public datasets may download data through MOABB/MNE the first time they are used. BCI IV 2a uses Braindecode description-based splitting: `session=0train` for training and `session=1test` for final testing.
@@ -35,6 +36,14 @@ python scripts/braindecode_scripts/train_within_subjects.py experiment=within_su
 ```
 
 Per-subject checkpoints are saved in per-subject output folders, and aggregate metrics are written to `within_subject_results.csv` inside the Hydra run directory.
+
+## Subject-pooled training and evaluation
+
+Use `scripts/braindecode_scripts/train_subject_pooled.py` to train one shared model on all configured subjects' `0train` sessions and evaluate it on those same subjects' `1test` sessions.
+
+```bash
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
+```
 
 ## Split note
 

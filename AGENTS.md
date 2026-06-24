@@ -52,7 +52,8 @@ BRAINDECODE/
 ├── outputs/                    # Hydra run outputs (gitignored)
 ├── scripts/braindecode_scripts/# runnable entry points
 │   ├── train_within_subject_smoke.py
-│   └── train_within_subjects.py
+│   ├── train_within_subjects.py
+│   └── train_subject_pooled.py
 └── src/eeg_bci/                # main package
     ├── data/                   # datasets, preprocessing, splitting, windowing
     ├── models/                 # Braindecode model factory
@@ -105,12 +106,21 @@ python scripts/braindecode_scripts/train_within_subjects.py experiment=within_su
 
 This loops over all configured subjects, trains one model per subject, and writes an aggregate `within_subject_results.csv` inside the Hydra run directory. Checkpoints are saved per subject under `outputs/<date>/<time>/subject_<id>/model.pt`.
 
+### Subject-pooled evaluation
+
+```bash
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
+```
+
+This trains one shared model on all configured subjects' `0train` sessions and evaluates it on those same subjects' `1test` sessions.
+
 ### Common overrides
 
 ```bash
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke training.max_epochs=10 model.params.drop_prob=0.4
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke model=eegnet
 python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full training.max_epochs=20
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled training.max_epochs=20
 ```
 
 ---
@@ -123,7 +133,7 @@ Hydra config groups:
 - `preprocessing` — `motor_imagery`, `bcic_iv_2a` (currently identical values, separated so dataset-specific tuning can diverge).
 - `model` — `eegnet`, `shallowfbcspnet`, `deep4net`, or any class exposed by `braindecode.models`.
 - `training` — `default`: epochs, batch size, learning rate, validation/cross-validation/grid-search knobs.
-- `experiment` — `within_subject_smoke`, `within_subject_full`: presets that override the groups above.
+- `experiment` — `within_subject_smoke`, `within_subject_full`, `subject_pooled`: presets that override the groups above.
 
 Key config conventions:
 
@@ -226,6 +236,9 @@ python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=with
 
 # Full within-subject evaluation
 python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full
+
+# Subject-pooled evaluation
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
 
 # Override training epochs and model dropout
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke training.max_epochs=10 model.params.drop_prob=0.4
