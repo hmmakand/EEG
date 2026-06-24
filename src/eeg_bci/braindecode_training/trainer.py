@@ -19,6 +19,7 @@ from eeg_bci.braindecode_training.evaluation import (
     score_classifier,
     score_classifier_by_description,
 )
+from eeg_bci.data.splitting import LEAVE_ONE_SUBJECT_OUT
 from eeg_bci.data.splitting import SESSION_CROSS_VALIDATION_TEST
 from eeg_bci.data.splitting import SESSION_GRID_SEARCH_TEST
 from eeg_bci.data.splitting import SESSION_TRAIN_TEST
@@ -37,7 +38,12 @@ def train_from_split_plan(
     training_cfg: DictConfig,
     output_dir: Path,
 ) -> dict[str, MetricValue]:
-    if split_plan.split_strategy in {SESSION_TRAIN_TEST, SESSION_TRAIN_VALID_TEST, "random"}:
+    if split_plan.split_strategy in {
+        SESSION_TRAIN_TEST,
+        SESSION_TRAIN_VALID_TEST,
+        LEAVE_ONE_SUBJECT_OUT,
+        "random",
+    }:
         return _train_once(
             model,
             split_plan.train_set,

@@ -1,0 +1,21 @@
+# @package _global_
+# Leave-one-subject-out preset: train on all non-held-out subjects
+# from session 0train and evaluate on the held-out subject from session 1test.
+defaults:
+  - override /dataset: bcic_iv_2a
+  - override /preprocessing: bcic_iv_2a
+  - override /model: shallowfbcspnet
+  - override /training: default
+
+dataset:
+  split:
+    strategy: leave_one_subject_out
+    session:
+      column: session
+      train_key: 0train
+      test_key: 1test
+    subject:
+      column: subject
+
+training:
+  max_epochs: 2

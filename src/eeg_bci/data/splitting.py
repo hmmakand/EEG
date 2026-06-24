@@ -20,6 +20,7 @@ from typing import Any, Protocol, TypeAlias, cast
 
 import numpy as np
 import torch
+from braindecode.datasets import BaseConcatDataset
 from omegaconf import DictConfig
 from sklearn.model_selection import BaseCrossValidator, KFold
 from torch.utils.data import Dataset, Subset, random_split
@@ -30,6 +31,7 @@ SESSION_TRAIN_TEST = "session_train_test"
 SESSION_TRAIN_VALID_TEST = "session_train_valid_test"
 SESSION_CROSS_VALIDATION_TEST = "session_cross_validation_test"
 SESSION_GRID_SEARCH_TEST = "session_grid_search_test"
+LEAVE_ONE_SUBJECT_OUT = "leave_one_subject_out"
 
 SESSION_SPLIT_STRATEGIES = {
     SESSION_TRAIN_TEST,
@@ -51,6 +53,17 @@ class SplitPlan:
     valid_set: Dataset | None
     test_set: Dataset
     resampler: Resampler | None
+
+
+@dataclass(frozen=True)
+class CrossSubjectFold:
+    """One leave-one-subject-out fold."""
+
+    held_out_subject: int | str
+    train_subjects: list[int | str]
+    train_set: Dataset
+    valid_set: Dataset | None
+    test_set: Dataset
 
 
 class SplittableBraindecodeDataset(Protocol):
@@ -225,6 +238,66 @@ def split_by_description(
 ) -> tuple[Dataset, Dataset]:
     """Split a Braindecode dataset using description metadata."""
 
+    train_source, test_source = _split_by_session_description(dataset, split_cfg)
+    return (
+        TensorDatasetFromBraindecode(train_source),
+        TensorDatasetFromBraindecode(test_source),
+    )
+
+
+def make_leave_one_subject_out_folds(
+    dataset: BraindecodeLikeDataset,
+    split_cfg: DictConfig,
+    *,
+    seed: int,
+) -> list[CrossSubjectFold]:
+    """Create train/test-only leave-one-subject-out folds."""
+
+    _ = seed
+    train_pool, test_pool = _split_by_session_description(dataset, split_cfg)
+    subject_cfg = _section(split_cfg, "subject")
+    subject_column = str(
+        subject_cfg.get(
+            "column",
+            split_cfg.get("subject_column", "subject"),
+        )
+    )
+
+    train_by_subject = _description_splits(train_pool, subject_column)
+    test_by_subject = _description_splits(test_pool, subject_column)
+    subject_keys = sorted(
+        set(train_by_subject).intersection(test_by_subject),
+        key=_sort_description_key,
+    )
+    if len(subject_keys) < 2:
+        raise ValueError(
+            "Leave-one-subject-out requires at least two subjects present in both "
+            f"the training and test sessions for column {subject_column}."
+        )
+
+    folds: list[CrossSubjectFold] = []
+    for held_out_key in subject_keys:
+        train_keys = [key for key in subject_keys if key != held_out_key]
+        train_source = _concat_braindecode_sources(
+            [train_by_subject[key] for key in train_keys]
+        )
+        test_source = test_by_subject[held_out_key]
+        folds.append(
+            CrossSubjectFold(
+                held_out_subject=_normalize_description_key(held_out_key),
+                train_subjects=[_normalize_description_key(key) for key in train_keys],
+                train_set=TensorDatasetFromBraindecode(train_source),
+                valid_set=None,
+                test_set=TensorDatasetFromBraindecode(test_source),
+            )
+        )
+    return folds
+
+
+def _split_by_session_description(
+    dataset: BraindecodeLikeDataset,
+    split_cfg: DictConfig,
+) -> tuple[BraindecodeLikeDataset, BraindecodeLikeDataset]:
     session_cfg = _section(split_cfg, "session")
     column = str(session_cfg.get("column", split_cfg.get("column", "session")))
     train_key = str(session_cfg.get("train_key", split_cfg.get("train_key", "0train")))
@@ -235,26 +308,58 @@ def split_by_description(
         )
     )
 
-    if not hasattr(dataset, "split"):
-        raise TypeError(
-            "Description-based splitting requires a Braindecode dataset with split()."
-        )
-
-    splittable = cast(SplittableBraindecodeDataset, dataset)
-    splits = splittable.split(column)
+    splits = _description_splits(dataset, column)
     missing_keys = [key for key in (train_key, test_key) if key not in splits]
     if missing_keys:
-        available = ", ".join(sorted(splits))
+        available = ", ".join(str(key) for key in sorted(splits, key=_sort_description_key))
         missing = ", ".join(missing_keys)
         raise KeyError(
             f"Split keys not found for column {column}: {missing}. "
             f"Available keys: {available}."
         )
 
-    return (
-        TensorDatasetFromBraindecode(splits[train_key]),
-        TensorDatasetFromBraindecode(splits[test_key]),
-    )
+    return splits[train_key], splits[test_key]
+
+
+def _description_splits(
+    dataset: BraindecodeLikeDataset,
+    column: str,
+) -> dict[Any, BraindecodeLikeDataset]:
+    if not hasattr(dataset, "split"):
+        raise TypeError(
+            "Description-based splitting requires a Braindecode dataset with split()."
+        )
+    splittable = cast(SplittableBraindecodeDataset, dataset)
+    return splittable.split(column)
+
+
+def _concat_braindecode_sources(
+    sources: list[BraindecodeLikeDataset],
+) -> BraindecodeLikeDataset:
+    datasets: list[Any] = []
+    for source in sources:
+        source_any = cast(Any, source)
+        if hasattr(source_any, "datasets"):
+            datasets.extend(source_any.datasets)
+        else:
+            datasets.append(source)
+    return BaseConcatDataset(datasets)
+
+
+def _normalize_description_key(key: Any) -> int | str:
+    if hasattr(key, "item"):
+        key = key.item()
+    try:
+        return int(key)
+    except (TypeError, ValueError):
+        return str(key)
+
+
+def _sort_description_key(key: Any) -> tuple[int, int | str]:
+    normalized = _normalize_description_key(key)
+    if isinstance(normalized, int):
+        return (0, normalized)
+    return (1, normalized)
 
 
 def make_resampler(split_cfg: DictConfig, *, seed: int) -> Resampler:
