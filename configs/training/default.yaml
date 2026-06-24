@@ -1,6 +1,6 @@
 max_epochs: 3
 batch_size: 16
-learning_rate: 0.001
+learning_rate: 0.000625
 weight_decay: 0.0
 num_workers: 0
 checkpoint_name: model.pt

@@ -5,7 +5,7 @@ EEG-BCI development workspace using Braindecode for datasets/models/training and
 ## First runnable training smoke test
 
 ```bash
-python scripts/braindecode_scripts/train_single_run.py experiment=smoke
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
 ```
 
 The smoke config uses BCI IV 2a subject 1 for a fast real-data pipeline check.
@@ -18,20 +18,20 @@ MOABB/MNE datasets are downloaded under `data/moabb` by default for project-loca
 ## Override examples
 
 ```bash
-python scripts/braindecode_scripts/train_single_run.py experiment=smoke training.max_epochs=10 model.params.drop_prob=0.4
-python scripts/braindecode_scripts/train_single_run.py experiment=smoke
-python scripts/braindecode_scripts/train_eval_within_subjects.py experiment=full
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke training.max_epochs=10 model.params.drop_prob=0.4
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
+python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full
 ```
 
 Public datasets may download data through MOABB/MNE the first time they are used. BCI IV 2a uses Braindecode description-based splitting: `session=0train` for training and `session=1test` for final testing.
 
 ## Within-subject training and evaluation
 
-Use `scripts/braindecode_scripts/train_single_run.py` for the subject-1 smoke run and `scripts/braindecode_scripts/train_eval_within_subjects.py` for within-subject training and evaluation. The full BCI IV 2a config uses subjects 1-9; the subject-1 experiment is kept as a faster real-data smoke test.
+Use `scripts/braindecode_scripts/train_within_subject_smoke.py` for the subject-1 smoke run and `scripts/braindecode_scripts/train_within_subjects.py` for within-subject training and evaluation. The full BCI IV 2a config uses subjects 1-9; the subject-1 experiment is kept as a faster real-data smoke test.
 
 ```bash
-python scripts/braindecode_scripts/train_single_run.py experiment=smoke
-python scripts/braindecode_scripts/train_eval_within_subjects.py experiment=full
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
+python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full
 ```
 
 Per-subject checkpoints are saved in per-subject output folders, and aggregate metrics are written to `within_subject_results.csv` inside the Hydra run directory.

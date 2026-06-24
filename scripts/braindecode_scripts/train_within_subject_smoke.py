@@ -21,11 +21,11 @@ from eeg_bci.utils.seed import seed_everything
 
 @hydra.main(version_base="1.3", config_path="../../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
-    if not _is_smoke_experiment():
+    if not _is_within_subject_smoke_experiment():
         print(
-            "train_single_run.py is only for the smoke experiment.\n"
-            "Run: python scripts/braindecode_scripts/train_single_run.py experiment=smoke\n"
-            "For the full within-subject run, use: python scripts/braindecode_scripts/train_eval_within_subjects.py experiment=full"
+            "train_within_subject_smoke.py is only for the within-subject smoke experiment.\n"
+            "Run: python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke\n"
+            "For the full within-subject run, use: python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full"
         )
         return
     print(OmegaConf.to_yaml(cfg))
@@ -57,12 +57,12 @@ def _resolve_device(device_name: str) -> torch.device:
     return torch.device(device_name)
 
 
-def _is_smoke_experiment() -> bool:
+def _is_within_subject_smoke_experiment() -> bool:
     experiment = HydraConfig.get().runtime.choices.get("experiment")
-    return experiment == "smoke"
+    return experiment == "within_subject_smoke"
 
 
 if __name__ == "__main__":
     if not any(arg.startswith("experiment=") for arg in sys.argv[1:]):
-        sys.argv.append("experiment=smoke")
+        sys.argv.append("experiment=within_subject_smoke")
     main()

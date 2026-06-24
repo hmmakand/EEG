@@ -6,7 +6,7 @@ apply configured Braindecode preprocessors, create event windows, and return the
 windowed dataset plus shape metadata needed by the model factory.
 
 Use a single-subject config for quick real-data smoke tests. Use the full
-subject list with `scripts/braindecode_scripts/train_eval_within_subjects.py` for within-subject training and evaluation runs,
+subject list with `scripts/braindecode_scripts/train_within_subjects.py` for within-subject training and evaluation runs,
 where each subject is trained/evaluated separately.
 """
 
