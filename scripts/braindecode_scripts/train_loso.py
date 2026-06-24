@@ -42,10 +42,14 @@ def main(cfg: DictConfig) -> None:
     device = _resolve_device(str(cfg.device))
     output_dir = Path(cfg.output_dir)
     dataset, dataset_info = build_dataset(cfg.dataset, cfg.preprocessing)
+    validation_cfg = cfg.training.validation
     folds = make_leave_one_subject_out_folds(
         dataset,
         cfg.dataset.split,
         seed=int(cfg.seed),
+        validation_enabled=bool(validation_cfg.enabled),
+        validation_size=float(validation_cfg.valid_size),
+        validation_shuffle=bool(validation_cfg.shuffle),
     )
 
     results: list[dict[str, str | float | int]] = []
@@ -74,6 +78,7 @@ def main(cfg: DictConfig) -> None:
             "held_out_subject": held_out,
             "train_subjects": " ".join(str(subject) for subject in fold.train_subjects),
             "n_train_windows": len(cast(SizedDataset, fold.train_set)),
+            "n_valid_windows": _dataset_len(fold.valid_set),
             "n_test_windows": len(cast(SizedDataset, fold.test_set)),
             **metrics,
         }
@@ -93,6 +98,12 @@ def main(cfg: DictConfig) -> None:
         f"loso_test_acc_std={test_acc_std:.4f} "
         f"loso_test_acc_weighted={test_acc_weighted:.4f}"
     )
+
+
+def _dataset_len(dataset: object | None) -> int:
+    if dataset is None:
+        return 0
+    return len(cast(SizedDataset, dataset))
 
 
 def _summarize_results(
@@ -127,10 +138,13 @@ def _result_fieldnames(results: list[dict[str, str | float | int]]) -> list[str]
         "held_out_subject",
         "train_subjects",
         "n_train_windows",
+        "n_valid_windows",
         "n_test_windows",
         "split_strategy",
         "train_loss",
         "train_acc",
+        "valid_loss",
+        "valid_acc",
         "test_acc",
     ]
     present = {key for row in results for key in row}

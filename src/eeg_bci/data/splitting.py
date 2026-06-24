@@ -250,10 +250,12 @@ def make_leave_one_subject_out_folds(
     split_cfg: DictConfig,
     *,
     seed: int,
+    validation_enabled: bool = False,
+    validation_size: float = 0.2,
+    validation_shuffle: bool = False,
 ) -> list[CrossSubjectFold]:
-    """Create train/test-only leave-one-subject-out folds."""
+    """Create leave-one-subject-out train/test or train/valid/test folds."""
 
-    _ = seed
     train_pool, test_pool = _split_by_session_description(dataset, split_cfg)
     subject_cfg = _section(split_cfg, "subject")
     subject_column = str(
@@ -282,12 +284,21 @@ def make_leave_one_subject_out_folds(
             [train_by_subject[key] for key in train_keys]
         )
         test_source = test_by_subject[held_out_key]
+        train_set = TensorDatasetFromBraindecode(train_source)
+        valid_set: Dataset | None = None
+        if validation_enabled:
+            train_set, valid_set = split_train_valid(
+                train_set,
+                valid_size=validation_size,
+                shuffle=validation_shuffle,
+                seed=seed,
+            )
         folds.append(
             CrossSubjectFold(
                 held_out_subject=_normalize_description_key(held_out_key),
                 train_subjects=[_normalize_description_key(key) for key in train_keys],
-                train_set=TensorDatasetFromBraindecode(train_source),
-                valid_set=None,
+                train_set=train_set,
+                valid_set=valid_set,
                 test_set=TensorDatasetFromBraindecode(test_source),
             )
         )

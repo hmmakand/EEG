@@ -19,3 +19,5 @@ dataset:
 
 training:
   max_epochs: 2
+  validation:
+    enabled: false # if true will creare (train+val) & test
