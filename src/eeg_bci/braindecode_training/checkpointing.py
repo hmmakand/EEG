@@ -7,5 +7,6 @@ import torch
 
 
 def save_classifier_module(classifier: Any, output_dir: Path, checkpoint_name: str) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    torch.save(classifier.module_.state_dict(), output_dir / checkpoint_name)
+    checkpoint_dir = output_dir / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(classifier.module_.state_dict(), checkpoint_dir / checkpoint_name)

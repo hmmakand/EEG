@@ -198,7 +198,7 @@ Key config conventions:
 - **Path handling**: use `pathlib.Path`. Dataset cache paths are resolved against Hydra's original CWD so relative paths survive Hydra's working-directory changes.
 - **Randomness**: call `seed_everything(cfg.seed)` at the start of every script. Splits use seeded `torch.Generator` or `numpy.random.default_rng`.
 - **Error messages**: unsupported values raise `ValueError`/`TypeError` with lists of available options.
-- **Logging**: MNE/Braindecode log levels are reduced to `WARNING` during preprocessing and classifier construction.
+- **Logging/tracking**: use `src/eeg_bci/tracking/` for Python logging, artifact saving, run naming, TensorBoard text/scalars, and `outputs/results_master.csv`. MNE/Braindecode log levels are reduced to `WARNING`.
 
 ---
 
@@ -216,7 +216,7 @@ If you add tests, use `pytest` and place them in a top-level `tests/` directory.
 
 ## Outputs and artifacts
 
-Hydra creates a timestamped run directory under `outputs/<YYYY-MM-DD>/<HH-MM-SS>/` for every invocation:
+Hydra creates organized run directories under `outputs/runs/{experiment}/{dataset}/{model}/{timestamp}__seed{seed}/` for every invocation:
 
 - `model.pt` — saved `state_dict` of the trained network.
 - `.hydra/` — resolved config and overrides.

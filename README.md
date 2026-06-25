@@ -13,3 +13,35 @@ python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_po
 # Leave-one-subject-out run
 python scripts/braindecode_scripts/train_loso.py experiment=loso
 ```
+
+## Experiment tracking
+
+Runs are organized for manuscript-friendly comparison across experiments, datasets, models, subjects/folds, and seeds.
+
+```text
+outputs/runs/{experiment}/{dataset}/{model}/{timestamp}__seed{seed}/
+  logs/run.log
+  metrics/final_metrics.yaml
+  metrics/final_metrics.json
+  metrics/dataset_info.yaml
+  metrics/run_metadata.yaml
+  history/history.csv
+  checkpoints/model.pt
+  results/
+
+outputs/tensorboard/{experiment}/{dataset}/{model}/{subject_or_fold}__{timestamp}__seed{seed}/
+outputs/results_master.csv
+```
+
+Use TensorBoard to compare all runs:
+
+```bash
+tensorboard --logdir outputs/tensorboard
+```
+
+Or compare one experiment/dataset across models:
+
+```bash
+tensorboard --logdir outputs/tensorboard/within_subject_smoke/bcic_iv_2a
+```
+

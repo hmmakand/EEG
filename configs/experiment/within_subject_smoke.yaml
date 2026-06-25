@@ -1,4 +1,5 @@
 # @package _global_
+experiment_name: within_subject_smoke
 # Fast real-data smoke preset: one BCI IV 2a subject + dataset-specific preprocessing.
 defaults:
   - override /dataset: bcic_iv_2a_subject1

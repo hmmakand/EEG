@@ -1,4 +1,5 @@
 # @package _global_
+experiment_name: loso
 # Leave-one-subject-out preset: train on all non-held-out subjects
 # from session 0train and evaluate on the held-out subject from session 1test.
 defaults:

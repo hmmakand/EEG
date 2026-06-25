@@ -3,9 +3,14 @@ defaults:
   - preprocessing: motor_imagery
   - model: atcnet
   - training: default
-  - experiment: null
   - _self_
+  - experiment: null
 
+experiment_name: run
 seed: 42
 device: auto
 output_dir: ${hydra:runtime.output_dir}
+
+hydra:
+  run:
+    dir: outputs/runs/${experiment_name}/${dataset.label}/${model.label}/${now:%Y-%m-%d_%H-%M-%S}__seed${seed}

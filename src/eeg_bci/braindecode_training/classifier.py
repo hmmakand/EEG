@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import torch
 from braindecode import EEGClassifier
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import LRScheduler, TensorBoard
 from skorch.helper import predefined_split
 from torch import nn
 from torch.utils.data import Dataset
+from torch.utils.tensorboard import SummaryWriter
 
 
 def build_eeg_classifier(
@@ -21,6 +23,7 @@ def build_eeg_classifier(
     weight_decay: float,
     num_workers: int,
     valid_set: Dataset | None = None,
+    tensorboard_dir: Path | None = None,
 ) -> EEGClassifier:
     logging.getLogger("braindecode.eegneuralnet.EEGClassifier").setLevel(logging.WARNING)
 
@@ -31,6 +34,9 @@ def build_eeg_classifier(
             LRScheduler("CosineAnnealingLR", T_max=max(max_epochs - 1, 1)),
         ),
     ]
+    if tensorboard_dir is not None:
+        tensorboard_dir.mkdir(parents=True, exist_ok=True)
+        callbacks.append(("tensorboard", TensorBoard(SummaryWriter(str(tensorboard_dir)))))
     train_split = predefined_split(valid_set) if valid_set is not None else None
     return EEGClassifier(
         model,

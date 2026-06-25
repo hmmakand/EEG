@@ -1,4 +1,5 @@
 # @package _global_
+experiment_name: within_subject_full
 # Full experiment preset: real BCI IV 2a data + dataset-specific preprocessing.
 defaults:
   - override /dataset: bcic_iv_2a

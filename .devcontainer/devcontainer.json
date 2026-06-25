@@ -3,7 +3,13 @@
 {
 	"name": "EEG Development with Braindecode",
 	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-	"image": "mcr.microsoft.com/devcontainers/python:3-3.11-trixie"
+	"image": "mcr.microsoft.com/devcontainers/python:3-3.11-trixie",
+	"hostRequirements": {
+        "gpu": true
+    },
+    "runArgs": [
+        "--gpus=all"
+    ]
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},

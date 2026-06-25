@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +26,11 @@ from eeg_bci.data.splitting import SESSION_GRID_SEARCH_TEST
 from eeg_bci.data.splitting import SESSION_TRAIN_TEST
 from eeg_bci.data.splitting import SESSION_TRAIN_VALID_TEST
 from eeg_bci.data.splitting import SplitPlan, split_train_valid
+from eeg_bci.tracking.artifacts import export_history
+from eeg_bci.tracking.tensorboard import write_final_scalars, write_history_scalars
 
 MetricValue = float | int | str
+logger = logging.getLogger(__name__)
 
 
 def train_from_split_plan(
@@ -37,6 +41,7 @@ def train_from_split_plan(
     device: torch.device,
     training_cfg: DictConfig,
     output_dir: Path,
+    tensorboard_dir: Path | None = None,
 ) -> dict[str, MetricValue]:
     if split_plan.split_strategy in {
         SESSION_TRAIN_TEST,
@@ -53,6 +58,7 @@ def train_from_split_plan(
             device=device,
             training_cfg=training_cfg,
             output_dir=output_dir,
+            tensorboard_dir=tensorboard_dir,
             split_strategy=split_plan.split_strategy,
         )
 
@@ -64,6 +70,7 @@ def train_from_split_plan(
             device=device,
             training_cfg=training_cfg,
             output_dir=output_dir,
+            tensorboard_dir=tensorboard_dir,
         )
 
     if split_plan.split_strategy == SESSION_GRID_SEARCH_TEST:
@@ -74,6 +81,7 @@ def train_from_split_plan(
             device=device,
             training_cfg=training_cfg,
             output_dir=output_dir,
+            tensorboard_dir=tensorboard_dir,
         )
 
     raise ValueError(f"Unsupported split strategy {split_plan.split_strategy}.")
@@ -97,6 +105,7 @@ def train_model(
     validation_size: float,
     validation_shuffle: bool,
     seed: int,
+    tensorboard_dir: Path | None = None,
 ) -> dict[str, MetricValue]:
     valid_set: Dataset | None = None
     if validation_enabled:
@@ -126,6 +135,7 @@ def train_model(
         device=device,
         training_cfg=training_cfg,
         output_dir=output_dir,
+        tensorboard_dir=tensorboard_dir,
         split_strategy="single_fit",
     )
 
@@ -140,21 +150,38 @@ def _train_once(
     device: torch.device,
     training_cfg: DictConfig,
     output_dir: Path,
+    tensorboard_dir: Path | None,
     split_strategy: str,
 ) -> dict[str, MetricValue]:
-    classifier = _build_classifier(model, n_outputs, device, training_cfg, valid_set=valid_set)
+    classifier = _build_classifier(
+        model,
+        n_outputs,
+        device,
+        training_cfg,
+        valid_set=valid_set,
+        tensorboard_dir=tensorboard_dir,
+    )
     classifier.fit(train_set, y=None)
     test_acc = score_classifier(classifier, test_set)
     train_loss = latest_history_value(classifier, "train_loss")
     train_acc = latest_history_value(classifier, "train_accuracy")
     save_classifier_module(classifier, output_dir, str(training_cfg.checkpoint_name))
+    history_path = export_history(classifier, output_dir)
+    if tensorboard_dir is not None:
+        write_history_scalars(tensorboard_dir, classifier)
+        write_final_scalars(tensorboard_dir, {"test_acc": test_acc})
     subject_results_path = _write_subject_test_results(classifier, test_set, output_dir)
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_strategy,
+        "n_train_windows": len(train_set),
+        "n_valid_windows": len(valid_set) if valid_set is not None else 0,
+        "n_test_windows": len(test_set),
         "train_loss": train_loss,
         "train_acc": train_acc,
         "test_acc": test_acc,
+        "checkpoint_path": str(output_dir / "checkpoints" / str(training_cfg.checkpoint_name)),
+        "history_path": str(history_path),
     }
     if valid_set is not None:
         metrics["valid_loss"] = latest_history_value(classifier, "valid_loss")
@@ -162,9 +189,9 @@ def _train_once(
     if subject_results_path is not None:
         metrics["subject_test_results"] = str(subject_results_path)
 
-    print(f"test_acc={test_acc:.4f}")
+    logger.info("test_acc=%.4f", test_acc)
     if subject_results_path is not None:
-        print(f"subject_test_results={subject_results_path}")
+        logger.info("subject_test_results=%s", subject_results_path)
     return metrics
 
 
@@ -176,11 +203,19 @@ def _train_with_cross_validation(
     device: torch.device,
     training_cfg: DictConfig,
     output_dir: Path,
+    tensorboard_dir: Path | None,
 ) -> dict[str, MetricValue]:
     if split_plan.resampler is None:
         raise ValueError("Cross-validation requires a resampler.")
 
-    classifier = _build_classifier(model, n_outputs, device, training_cfg, valid_set=None)
+    classifier = _build_classifier(
+        model,
+        n_outputs,
+        device,
+        training_cfg,
+        valid_set=None,
+        tensorboard_dir=None,
+    )
     X_train, y_train = _slice_xy(split_plan.train_pool)
     cv_scores = cross_val_score(
         classifier,
@@ -191,12 +226,20 @@ def _train_with_cross_validation(
         n_jobs=int(training_cfg.cross_validation.n_jobs),
     )
 
-    final_classifier = _build_classifier(model, n_outputs, device, training_cfg, valid_set=None)
+    final_classifier = _build_classifier(
+        model,
+        n_outputs,
+        device,
+        training_cfg,
+        valid_set=None,
+        tensorboard_dir=tensorboard_dir,
+    )
     final_classifier.fit(split_plan.train_pool, y=None)
     test_acc = score_classifier(final_classifier, split_plan.test_set)
     train_loss = latest_history_value(final_classifier, "train_loss")
     train_acc = latest_history_value(final_classifier, "train_accuracy")
     save_classifier_module(final_classifier, output_dir, str(training_cfg.checkpoint_name))
+    history_path = export_history(final_classifier, output_dir)
     subject_results_path = _write_subject_test_results(
         final_classifier,
         split_plan.test_set,
@@ -205,20 +248,28 @@ def _train_with_cross_validation(
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_plan.split_strategy,
+        "n_train_windows": len(split_plan.train_pool),
+        "n_valid_windows": 0,
+        "n_test_windows": len(split_plan.test_set),
         "train_loss": train_loss,
         "train_acc": train_acc,
         "cv_acc_mean": float(np.mean(cv_scores)),
         "cv_acc_std": float(np.std(cv_scores)),
         "test_acc": test_acc,
+        "checkpoint_path": str(output_dir / "checkpoints" / str(training_cfg.checkpoint_name)),
+        "history_path": str(history_path),
     }
     metrics.update(_fold_score_metrics("cv_acc", cv_scores))
     if subject_results_path is not None:
         metrics["subject_test_results"] = str(subject_results_path)
-    cv_acc_mean = float(metrics["cv_acc_mean"])
-    print(f"cv_acc_mean={cv_acc_mean:.4f}")
-    print(f"test_acc={test_acc:.4f}")
+    if tensorboard_dir is not None:
+        write_history_scalars(tensorboard_dir, final_classifier)
+        write_final_scalars(tensorboard_dir, metrics)
+
+    logger.info("cv_acc_mean=%.4f", float(metrics["cv_acc_mean"]))
+    logger.info("test_acc=%.4f", test_acc)
     if subject_results_path is not None:
-        print(f"subject_test_results={subject_results_path}")
+        logger.info("subject_test_results=%s", subject_results_path)
     return metrics
 
 
@@ -230,11 +281,19 @@ def _train_with_grid_search(
     device: torch.device,
     training_cfg: DictConfig,
     output_dir: Path,
+    tensorboard_dir: Path | None,
 ) -> dict[str, MetricValue]:
     if split_plan.resampler is None:
         raise ValueError("Grid search requires a resampler.")
 
-    classifier = _build_classifier(model, n_outputs, device, training_cfg, valid_set=None)
+    classifier = _build_classifier(
+        model,
+        n_outputs,
+        device,
+        training_cfg,
+        valid_set=None,
+        tensorboard_dir=None,
+    )
     X_train, y_train = _slice_xy(split_plan.train_pool)
     search = GridSearchCV(
         estimator=classifier,
@@ -254,6 +313,7 @@ def _train_with_grid_search(
     train_loss = latest_history_value(best_classifier, "train_loss")
     train_acc = latest_history_value(best_classifier, "train_accuracy")
     save_classifier_module(best_classifier, output_dir, str(training_cfg.checkpoint_name))
+    history_path = export_history(best_classifier, output_dir)
     subject_results_path = _write_subject_test_results(
         best_classifier,
         split_plan.test_set,
@@ -262,20 +322,28 @@ def _train_with_grid_search(
 
     metrics: dict[str, MetricValue] = {
         "split_strategy": split_plan.split_strategy,
+        "n_train_windows": len(split_plan.train_pool),
+        "n_valid_windows": 0,
+        "n_test_windows": len(split_plan.test_set),
         "train_loss": train_loss,
         "train_acc": train_acc,
         "best_score": float(search.best_score_),
         "best_params": str(search.best_params_),
         "test_acc": test_acc,
+        "checkpoint_path": str(output_dir / "checkpoints" / str(training_cfg.checkpoint_name)),
+        "history_path": str(history_path),
     }
     metrics.update(_grid_search_summary_metrics(search.cv_results_, int(search.best_index_)))
     if subject_results_path is not None:
         metrics["subject_test_results"] = str(subject_results_path)
-    best_score = float(metrics["best_score"])
-    print(f"best_score={best_score:.4f}")
-    print(f"test_acc={test_acc:.4f}")
+    if tensorboard_dir is not None:
+        write_history_scalars(tensorboard_dir, best_classifier)
+        write_final_scalars(tensorboard_dir, metrics)
+
+    logger.info("best_score=%.4f", float(metrics["best_score"]))
+    logger.info("test_acc=%.4f", test_acc)
     if subject_results_path is not None:
-        print(f"subject_test_results={subject_results_path}")
+        logger.info("subject_test_results=%s", subject_results_path)
     return metrics
 
 
@@ -292,7 +360,7 @@ def _write_subject_test_results(
     if len(rows) < 2:
         return None
 
-    path = output_dir / "subject_pooled_test_results.csv"
+    path = output_dir / "results" / "subject_pooled_test_results.csv"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=["subject", "n_windows", "test_acc"])
@@ -308,6 +376,7 @@ def _build_classifier(
     training_cfg: DictConfig,
     *,
     valid_set: Dataset | None,
+    tensorboard_dir: Path | None,
 ):
     return build_eeg_classifier(
         model,
@@ -319,6 +388,7 @@ def _build_classifier(
         weight_decay=float(training_cfg.weight_decay),
         num_workers=int(training_cfg.num_workers),
         valid_set=valid_set,
+        tensorboard_dir=tensorboard_dir,
     )
 
 

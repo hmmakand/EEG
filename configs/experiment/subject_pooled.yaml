@@ -1,4 +1,5 @@
 # @package _global_
+experiment_name: subject_pooled
 # Subject-pooled preset: one model trained on all configured subjects' 0train
 # sessions and evaluated on those same subjects' 1test sessions.
 defaults:
