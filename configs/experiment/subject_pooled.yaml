@@ -4,7 +4,6 @@
 defaults:
   - override /dataset: bcic_iv_2a
   - override /preprocessing: bcic_iv_2a
-  - override /model: eegnet
   - override /training: default
 
 dataset:

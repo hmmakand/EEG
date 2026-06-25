@@ -11,7 +11,7 @@ BRAINDECODE trains deep-learning models on EEG motor-imagery data. The main supp
 Key design decisions:
 
 - **Configuration-driven experiments**: every run is controlled by Hydra YAML files under `configs/`.
-- **Dataset/model/training decoupling**: the same training code works for synthetic data, single-subject smoke tests, and full within-subject evaluations.
+- **Dataset/model/training decoupling**: the same training code works for synthetic data, single-subject smoke tests, full within-subject evaluations, subject-pooled training, and leave-one-subject-out cross-validation.
 - **Session-aware splitting**: for real BCI IV 2a data, the official recording protocol is respected (`0train` for training, `1test` for final testing). Optional validation and inner cross-validation/grid-search are performed only inside the training pool.
 
 ---
@@ -53,7 +53,8 @@ BRAINDECODE/
 ├── scripts/braindecode_scripts/# runnable entry points
 │   ├── train_within_subject_smoke.py
 │   ├── train_within_subjects.py
-│   └── train_subject_pooled.py
+│   ├── train_subject_pooled.py
+│   └── train_loso.py
 └── src/eeg_bci/                # main package
     ├── data/                   # datasets, preprocessing, splitting, windowing
     ├── models/                 # Braindecode model factory
@@ -96,7 +97,7 @@ All experiments are launched through Hydra. The top-level config is `configs/con
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
 ```
 
-This loads BCI IV 2a subject 1, applies dataset-specific preprocessing, trains `ShallowFBCSPNet` for 3 epochs, and reports `test_acc`. The script defaults to `experiment=within_subject_smoke` if no `experiment=` argument is supplied and refuses to run other experiment presets.
+This loads BCI IV 2a subject 1, applies dataset-specific preprocessing, trains `ShallowFBCSPNet` for 2 epochs, and reports `test_acc`. The script defaults to `experiment=within_subject_smoke` if no `experiment=` argument is supplied and refuses to run other experiment presets.
 
 ### Full within-subject evaluation
 
@@ -112,7 +113,15 @@ This loops over all configured subjects, trains one model per subject, and write
 python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
 ```
 
-This trains one shared model on all configured subjects' `0train` sessions and evaluates it on those same subjects' `1test` sessions.
+This trains one shared model on all configured subjects' `0train` sessions and evaluates it on those same subjects' `1test` sessions. If the test set contains windows from more than one subject, per-subject accuracies are written to `subject_pooled_test_results.csv` in the run directory.
+
+### Leave-one-subject-out evaluation
+
+```bash
+python scripts/braindecode_scripts/train_loso.py experiment=loso
+```
+
+This creates one fold per subject, training on all other subjects' `0train` sessions and testing on the held-out subject's `1test` session. Results are aggregated in `loso_results.csv`, and per-fold checkpoints are saved under `held_out_subject_<id>/model.pt`.
 
 ### Common overrides
 
@@ -121,6 +130,7 @@ python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=with
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke model=eegnet
 python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full training.max_epochs=20
 python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled training.max_epochs=20
+python scripts/braindecode_scripts/train_loso.py experiment=loso training.max_epochs=20
 ```
 
 ---
@@ -133,13 +143,14 @@ Hydra config groups:
 - `preprocessing` — `motor_imagery`, `bcic_iv_2a` (currently identical values, separated so dataset-specific tuning can diverge).
 - `model` — `eegnet`, `shallowfbcspnet`, `deep4net`, or any class exposed by `braindecode.models`.
 - `training` — `default`: epochs, batch size, learning rate, validation/cross-validation/grid-search knobs.
-- `experiment` — `within_subject_smoke`, `within_subject_full`, `subject_pooled`: presets that override the groups above.
+- `experiment` — `within_subject_smoke`, `within_subject_full`, `subject_pooled`, `loso`: presets that override the groups above.
 
 Key config conventions:
 
 - `dataset.split.strategy` controls how data are split:
   - `random` — used by synthetic data.
   - `session_train_test`, `session_train_valid_test`, `session_cross_validation_test`, `session_grid_search_test` — used for real BCI IV 2a data.
+  - `leave_one_subject_out` — used by the LOSO experiment.
 - For session splits, the training pool is `session=0train` and the holdout test set is `session=1test`.
 - `validation.enabled` in `training/default.yaml` adds a held-out validation split from the training set. For session splits, inner validation can also be configured via `dataset.split.validation` or `dataset.split.resampling`.
 
@@ -156,10 +167,10 @@ Key config conventions:
 | `synthetic.py` | Generate an in-memory synthetic dataset for smoke tests. |
 | `preprocessing.py` | Build and apply Braindecode `Preprocessor` pipelines from config. |
 | `windowing.py` | Convert continuous data into event windows and infer model input dimensions. |
-| `splitting.py` | Split strategies: random, session-based, train/valid, cross-validation, grid-search resamplers. |
+| `splitting.py` | Split strategies: random, session-based, train/valid, cross-validation, grid-search resamplers, leave-one-subject-out folds. |
 | `adapters.py` | Wrap Braindecode datasets into PyTorch `(x, y)` `Dataset`s. |
 | `types.py` | `DatasetInfo` dataclass (`n_chans`, `n_outputs`, `n_times`, `sfreq`). |
-| `paths.py` | Resolve dataset cache paths relative to Hydra’s original working directory. |
+| `paths.py` | Resolve dataset cache paths relative to Hydra's original working directory. |
 
 ### `src/eeg_bci/models/`
 
@@ -184,7 +195,7 @@ Key config conventions:
 
 - **Python style**: modern Python 3.11 syntax, `from __future__ import annotations`, type hints, dataclasses, and docstrings.
 - **Configuration values**: always read through `omegaconf.DictConfig`; convert to plain containers with `OmegaConf.to_container(..., resolve=True)` when needed.
-- **Path handling**: use `pathlib.Path`. Dataset cache paths are resolved against Hydra’s original CWD so relative paths survive Hydra’s working-directory changes.
+- **Path handling**: use `pathlib.Path`. Dataset cache paths are resolved against Hydra's original CWD so relative paths survive Hydra's working-directory changes.
 - **Randomness**: call `seed_everything(cfg.seed)` at the start of every script. Splits use seeded `torch.Generator` or `numpy.random.default_rng`.
 - **Error messages**: unsupported values raise `ValueError`/`TypeError` with lists of available options.
 - **Logging**: MNE/Braindecode log levels are reduced to `WARNING` during preprocessing and classifier construction.
@@ -209,8 +220,10 @@ Hydra creates a timestamped run directory under `outputs/<YYYY-MM-DD>/<HH-MM-SS>
 
 - `model.pt` — saved `state_dict` of the trained network.
 - `.hydra/` — resolved config and overrides.
-- `train_within_subject_smoke.log` / `train.log` — captured stdout/log.
+- `train_within_subject_smoke.log` / `train.log` / `train_loso.log` — captured stdout/log.
 - For within-subject runs: `subject_<id>/model.pt` and `within_subject_results.csv`.
+- For subject-pooled runs: `subject_pooled_test_results.csv` when multiple subjects are in the test set.
+- For LOSO runs: `held_out_subject_<id>/model.pt` and `loso_results.csv`.
 
 These directories are gitignored by `.gitignore`.
 
@@ -239,6 +252,9 @@ python scripts/braindecode_scripts/train_within_subjects.py experiment=within_su
 
 # Subject-pooled evaluation
 python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
+
+# Leave-one-subject-out evaluation
+python scripts/braindecode_scripts/train_loso.py experiment=loso
 
 # Override training epochs and model dropout
 python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke training.max_epochs=10 model.params.drop_prob=0.4

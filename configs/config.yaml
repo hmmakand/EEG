@@ -1,7 +1,7 @@
 defaults:
   - dataset: synthetic
   - preprocessing: motor_imagery
-  - model: eegnet
+  - model: atcnet
   - training: default
   - experiment: null
   - _self_

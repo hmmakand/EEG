@@ -1,9 +1,8 @@
 # @package _global_
-# Fast real-data smoke preset: one BCI IV 2a subject + dataset-specific preprocessing + EEGNet.
+# Fast real-data smoke preset: one BCI IV 2a subject + dataset-specific preprocessing.
 defaults:
   - override /dataset: bcic_iv_2a_subject1
   - override /preprocessing: bcic_iv_2a
-  - override /model: shallowfbcspnet
   - override /training: default
 
 training:
