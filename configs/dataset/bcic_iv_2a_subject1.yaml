@@ -5,7 +5,7 @@ data_dir: data/moabb
 subject_ids:
   - 3
 split:
-  strategy: session_grid_search_test
+  strategy: session_train_test
   session:
     column: session
     train_key: 0train

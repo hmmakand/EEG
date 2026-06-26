@@ -8,6 +8,15 @@ validation:
   enabled: false
   valid_size: 0.2
   shuffle: false
+eval_metrics:
+  - accuracy
+  - balanced_accuracy
+  - cohen_kappa
+  - macro_f1
+  - macro_precision
+  - macro_recall
+  - confusion_matrix
+  - roc_auc
 cross_validation:
   scoring: accuracy
   n_jobs: 1

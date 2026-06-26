@@ -4,7 +4,7 @@ import csv
 import logging
 import sys
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import hydra
 import torch
@@ -23,8 +23,15 @@ from eeg_bci.data.splitting import LEAVE_ONE_SUBJECT_OUT, SplitPlan, make_leave_
 from eeg_bci.models.factory import build_model
 from eeg_bci.tracking.artifacts import prepare_run_dirs, save_dataset_info, save_final_metrics, save_run_metadata
 from eeg_bci.tracking.logging import configure_logging
-from eeg_bci.tracking.naming import dataset_label, held_out_label, model_label, tensorboard_dir
-from eeg_bci.tracking.results import append_master_result
+from eeg_bci.tracking.metrics import summarize_scalar_metrics
+from eeg_bci.tracking.naming import (
+    class_names_from_mapping,
+    dataset_label,
+    held_out_label,
+    model_label,
+    tensorboard_dir,
+)
+from eeg_bci.tracking.results import append_master_result, master_result_path
 from eeg_bci.tracking.tensorboard import write_run_text
 from eeg_bci.utils.seed import seed_everything
 
@@ -63,7 +70,7 @@ def main(cfg: DictConfig) -> None:
         validation_shuffle=bool(validation_cfg.shuffle),
     )
 
-    results: list[dict[str, str | float | int]] = []
+    results: list[dict[str, Any]] = []
     for fold in folds:
         held_out = fold.held_out_subject
         label = held_out_label(held_out)
@@ -89,6 +96,7 @@ def main(cfg: DictConfig) -> None:
             training_cfg=cfg.training,
             output_dir=fold_output_dir,
             tensorboard_dir=tb_dir,
+            class_names=class_names_from_mapping(cfg.dataset),
         )
         row = {
             "held_out_subject": held_out,
@@ -129,7 +137,11 @@ def main(cfg: DictConfig) -> None:
             },
         )
         append_master_result(
-            Path(get_original_cwd()) / "outputs" / "results_master.csv",
+            master_result_path(
+                Path(get_original_cwd()),
+                str(cfg.experiment_name),
+                dataset_label(cfg.dataset),
+            ),
             {
                 **metrics,
                 "run_id": run_id,
@@ -146,6 +158,8 @@ def main(cfg: DictConfig) -> None:
                 "n_times": dataset_info.n_times,
                 "sfreq": dataset_info.sfreq,
                 "config_path": str(output_dir / ".hydra" / "config.yaml"),
+                "final_metrics_path": str(fold_output_dir / "metrics" / "final_metrics.yaml"),
+                "dataset_info_path": str(fold_output_dir / "metrics" / "dataset_info.yaml"),
                 "status": "success",
             },
         )
@@ -160,12 +174,8 @@ def main(cfg: DictConfig) -> None:
     save_dataset_info(output_dir, dataset_info, extra={"dataset": dataset_label(cfg.dataset), "split_strategy": LEAVE_ONE_SUBJECT_OUT})
     save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id), status="success")
     logger.info("loso_results=%s", results_path)
-    logger.info(
-        "loso_test_acc_mean=%.4f loso_test_acc_std=%.4f loso_test_acc_weighted=%.4f",
-        summary["test_acc_mean"],
-        summary["test_acc_std"],
-        summary["test_acc_weighted"],
-    )
+    for key, value in summary.items():
+        logger.info("loso_%s=%.4f", key, value)
 
 
 def _dataset_len(dataset: object | None) -> int:
@@ -174,30 +184,38 @@ def _dataset_len(dataset: object | None) -> int:
     return len(cast(SizedDataset, dataset))
 
 
-def _summarize_results(results: list[dict[str, str | float | int]]) -> dict[str, float]:
-    test_accs = [float(row["test_acc"]) for row in results]
-    test_counts = [int(row["n_test_windows"]) for row in results]
-    if not test_accs:
-        return {"test_acc_mean": 0.0, "test_acc_std": 0.0, "test_acc_weighted": 0.0}
-    mean = sum(test_accs) / len(test_accs)
-    variance = sum((score - mean) ** 2 for score in test_accs) / len(test_accs)
-    total_count = sum(test_counts)
-    weighted = sum(score * count for score, count in zip(test_accs, test_counts)) / total_count if total_count > 0 else 0.0
-    return {"test_acc_mean": mean, "test_acc_std": variance ** 0.5, "test_acc_weighted": weighted}
+def _summarize_results(results: list[dict[str, Any]]) -> dict[str, float]:
+    return summarize_scalar_metrics(results)
 
 
-def _result_fieldnames(results: list[dict[str, str | float | int]]) -> list[str]:
+def _result_fieldnames(results: list[dict[str, Any]]) -> list[str]:
     preferred = [
-        "held_out_subject", "train_subjects", "n_train_windows", "n_valid_windows", "n_test_windows",
-        "split_strategy", "train_loss", "train_acc", "valid_loss", "valid_acc", "test_acc",
-        "checkpoint_path", "history_path",
+        "held_out_subject",
+        "train_subjects",
+        "n_train_windows",
+        "n_valid_windows",
+        "n_test_windows",
+        "split_strategy",
+        "train_loss",
+        "train_accuracy",
+        "valid_loss",
+        "valid_accuracy",
+        "test_accuracy",
+        "test_balanced_accuracy",
+        "test_cohen_kappa",
+        "test_macro_f1",
+        "test_macro_precision",
+        "test_macro_recall",
+        "test_roc_auc",
+        "checkpoint_path",
+        "history_path",
     ]
     present = {key for row in results for key in row}
     ordered = [fieldname for fieldname in preferred if fieldname in present]
     return ordered + sorted(present.difference(ordered))
 
 
-def _write_results(path: Path, results: list[dict[str, str | float | int]]) -> None:
+def _write_results(path: Path, results: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = _result_fieldnames(results)
     with path.open("w", newline="", encoding="utf-8") as file:

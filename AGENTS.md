@@ -142,7 +142,7 @@ Hydra config groups:
 - `dataset` — `synthetic`, `bcic_iv_2a`, `bcic_iv_2a_subject1`.
 - `preprocessing` — `motor_imagery`, `bcic_iv_2a` (currently identical values, separated so dataset-specific tuning can diverge).
 - `model` — `eegnet`, `shallowfbcspnet`, `deep4net`, or any class exposed by `braindecode.models`.
-- `training` — `default`: epochs, batch size, learning rate, validation/cross-validation/grid-search knobs.
+- `training` — `default`: epochs, batch size, learning rate, validation/cross-validation/grid-search knobs, plus `eval_metrics` controlling which metrics `tracking/metrics.py` computes at test time.
 - `experiment` — `within_subject_smoke`, `within_subject_full`, `subject_pooled`, `loso`: presets that override the groups above.
 
 Key config conventions:
@@ -185,6 +185,16 @@ Key config conventions:
 | `evaluation.py` | Score classifiers and read final-history metrics. |
 | `checkpointing.py` | Save the trained model `state_dict` as `model.pt`. |
 
+### `src/eeg_bci/tracking/`
+
+| Module | Responsibility |
+|--------|----------------|
+| `metrics.py` | Centralized metric computation (`accuracy`, `balanced_accuracy`, `cohen_kappa`, `macro_f1`, `confusion_matrix`, `roc_auc`, etc.). |
+| `artifacts.py` | Save `final_metrics.yaml/json`, training history, dataset info, and run metadata. |
+| `tensorboard.py` | Log scalars, run summaries, and confusion-matrix heatmaps to TensorBoard. |
+| `results.py` | Define `MASTER_COLUMNS` and `master_result_path()` for grouped `outputs/results/<dataset>/results_master_<experiment>.csv` files. |
+| `logging.py`, `naming.py` | Logging configuration and run-id/name helpers. |
+
 ### `src/eeg_bci/utils/`
 
 - `seed.py` centralizes seeding for `random`, `numpy`, and `torch` (including CUDA).
@@ -216,14 +226,17 @@ If you add tests, use `pytest` and place them in a top-level `tests/` directory.
 
 ## Outputs and artifacts
 
-Hydra creates organized run directories under `outputs/runs/{experiment}/{dataset}/{model}/{timestamp}__seed{seed}/` for every invocation:
+Hydra creates organized run directories under `outputs/runs/{dataset}/{experiment}/{model}/{timestamp}__seed{seed}/` for every invocation:
 
 - `model.pt` — saved `state_dict` of the trained network.
 - `.hydra/` — resolved config and overrides.
 - `train_within_subject_smoke.log` / `train.log` / `train_loso.log` — captured stdout/log.
+- `metrics/final_metrics.yaml` — final metrics, including `test_acc`, `test_balanced_accuracy`, `test_cohen_kappa`, `test_macro_f1`, `test_macro_precision`, `test_macro_recall`, `test_roc_auc`, and `test_confusion_matrix`.
+- TensorBoard logs now include a `test/confusion_matrix` heatmap image when `confusion_matrix` is in `eval_metrics`.
+- `outputs/results/<dataset>/results_master_<experiment>.csv` — per-dataset, per-experiment master result sheet (e.g., `outputs/results/bcic_iv_2a/results_master_within_subject_full.csv`).
 - For within-subject runs: `subject_<id>/model.pt` and `within_subject_results.csv`.
 - For subject-pooled runs: `subject_pooled_test_results.csv` when multiple subjects are in the test set.
-- For LOSO runs: `held_out_subject_<id>/model.pt` and `loso_results.csv`.
+- For LOSO runs: `held_out_subject_<id>/model.pt`, `loso_results.csv`, and `metrics/final_metrics.yaml` with per-fold summaries (`loso_accuracy_mean`, `loso_cohen_kappa_mean`, etc.).
 
 These directories are gitignored by `.gitignore`.
 

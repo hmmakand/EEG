@@ -25,8 +25,14 @@ from eeg_bci.tracking.artifacts import (
     save_run_metadata,
 )
 from eeg_bci.tracking.logging import configure_logging
-from eeg_bci.tracking.naming import dataset_label, model_label, subject_scope, tensorboard_dir
-from eeg_bci.tracking.results import append_master_result
+from eeg_bci.tracking.naming import (
+    class_names_from_mapping,
+    dataset_label,
+    model_label,
+    subject_scope,
+    tensorboard_dir,
+)
+from eeg_bci.tracking.results import append_master_result, master_result_path
 from eeg_bci.tracking.tensorboard import write_run_text
 from eeg_bci.utils.seed import seed_everything
 
@@ -68,6 +74,7 @@ def main(cfg: DictConfig) -> None:
         training_cfg=cfg.training,
         output_dir=output_dir,
         tensorboard_dir=tb_dir,
+        class_names=class_names_from_mapping(cfg.dataset),
     )
     save_final_metrics(output_dir, metrics)
     save_dataset_info(
@@ -98,7 +105,11 @@ def main(cfg: DictConfig) -> None:
         },
     )
     append_master_result(
-        Path(get_original_cwd()) / "outputs" / "results_master.csv",
+        master_result_path(
+            Path(get_original_cwd()),
+            str(cfg.experiment_name),
+            dataset_label(cfg.dataset),
+        ),
         {
             **metrics,
             "run_id": run_id,
@@ -115,6 +126,8 @@ def main(cfg: DictConfig) -> None:
             "n_times": dataset_info.n_times,
             "sfreq": dataset_info.sfreq,
             "config_path": str(output_dir / ".hydra" / "config.yaml"),
+            "final_metrics_path": str(output_dir / "metrics" / "final_metrics.yaml"),
+            "dataset_info_path": str(output_dir / "metrics" / "dataset_info.yaml"),
             "status": "success",
         },
     )

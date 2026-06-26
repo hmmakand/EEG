@@ -71,6 +71,21 @@ def experiment_label(cfg: DictConfig) -> str:
     return slugify(split)
 
 
+def class_names_from_mapping(dataset_cfg: DictConfig) -> list[str] | None:
+    """Return class names ordered by their integer label index.
+
+    Looks for ``mapping`` in the dataset config, e.g.
+    ``left_hand: 0, right_hand: 1, ...``. Returns ``None`` if no mapping exists.
+    """
+    if "mapping" not in dataset_cfg:
+        return None
+    mapping = OmegaConf.to_container(dataset_cfg.mapping, resolve=True)
+    if not isinstance(mapping, dict):
+        return None
+    sorted_items = sorted(mapping.items(), key=lambda item: int(item[1]))
+    return [str(name) for name, _ in sorted_items]
+
+
 def run_id(scope: str, seed: int, *, created_at: str | None = None) -> str:
     return f"{slugify(scope)}__seed{seed}__{created_at or timestamp()}"
 
@@ -78,8 +93,8 @@ def run_id(scope: str, seed: int, *, created_at: str | None = None) -> str:
 def tensorboard_dir(cfg: DictConfig, run_id_value: str, *, base_dir: str = "outputs/tensorboard") -> Path:
     return (
         Path(base_dir)
-        / experiment_label(cfg)
         / dataset_label(cfg.dataset)
+        / experiment_label(cfg)
         / model_label(cfg.model)
         / run_id_value
     )

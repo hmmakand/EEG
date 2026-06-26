@@ -5,6 +5,7 @@ from collections.abc import Sequence
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
 import hydra
 import torch
@@ -22,8 +23,15 @@ from eeg_bci.data.datasets import build_dataset_split
 from eeg_bci.models.factory import build_model
 from eeg_bci.tracking.artifacts import prepare_run_dirs, save_dataset_info, save_final_metrics, save_run_metadata
 from eeg_bci.tracking.logging import configure_logging
-from eeg_bci.tracking.naming import dataset_label, model_label, subject_label, tensorboard_dir
-from eeg_bci.tracking.results import append_master_result
+from eeg_bci.tracking.metrics import summarize_scalar_metrics
+from eeg_bci.tracking.naming import (
+    class_names_from_mapping,
+    dataset_label,
+    model_label,
+    subject_label,
+    tensorboard_dir,
+)
+from eeg_bci.tracking.results import append_master_result, master_result_path
 from eeg_bci.tracking.tensorboard import write_run_text
 from eeg_bci.utils.seed import seed_everything
 
@@ -40,7 +48,7 @@ def main(cfg: DictConfig) -> None:
 
     device = _resolve_device(str(cfg.device))
     subject_ids = _subject_ids(cfg.dataset)
-    results: list[dict[str, str | float | int]] = []
+    results: list[dict[str, Any]] = []
     parent_run_id = f"all_subjects__{output_dir.name}"
     save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id))
 
@@ -65,6 +73,7 @@ def main(cfg: DictConfig) -> None:
             training_cfg=cfg.training,
             output_dir=subject_output_dir,
             tensorboard_dir=tb_dir,
+            class_names=class_names_from_mapping(cfg.dataset),
         )
         row = {"subject": subject_id, **metrics}
         results.append(row)
@@ -97,7 +106,11 @@ def main(cfg: DictConfig) -> None:
             },
         )
         append_master_result(
-            Path(get_original_cwd()) / "outputs" / "results_master.csv",
+            master_result_path(
+                Path(get_original_cwd()),
+                str(cfg.experiment_name),
+                dataset_label(cfg.dataset),
+            ),
             {
                 **metrics,
                 "run_id": run_id,
@@ -114,6 +127,8 @@ def main(cfg: DictConfig) -> None:
                 "n_times": dataset_info.n_times,
                 "sfreq": dataset_info.sfreq,
                 "config_path": str(output_dir / ".hydra" / "config.yaml"),
+                "final_metrics_path": str(subject_output_dir / "metrics" / "final_metrics.yaml"),
+                "dataset_info_path": str(subject_output_dir / "metrics" / "dataset_info.yaml"),
                 "status": "success",
             },
         )
@@ -123,8 +138,12 @@ def main(cfg: DictConfig) -> None:
 
     results_path = output_dir / "results" / "within_subject_results.csv"
     _write_results(results_path, results)
+    summary = summarize_scalar_metrics(results)
+    save_final_metrics(output_dir, {f"within_subject_{key}": value for key, value in summary.items()})
     save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id), status="success")
     logger.info("within_subject_results=%s", results_path)
+    for key, value in summary.items():
+        logger.info("within_subject_%s=%.4f", key, value)
 
 
 def _copy_dataset_cfg(dataset_cfg: DictConfig) -> DictConfig:
@@ -147,19 +166,40 @@ def _subject_ids(dataset_cfg: DictConfig) -> Sequence[int | str]:
     return [int(subject_id) for subject_id in subject_ids]
 
 
-def _result_fieldnames(results: list[dict[str, str | float | int]]) -> list[str]:
+def _result_fieldnames(results: list[dict[str, Any]]) -> list[str]:
     preferred = [
-        "subject", "split_strategy", "n_train_windows", "n_valid_windows", "n_test_windows",
-        "train_loss", "train_acc", "valid_loss", "valid_acc", "cv_acc_mean", "cv_acc_std",
-        "best_score", "best_score_std", "best_train_score", "best_train_score_std",
-        "best_params", "test_acc", "checkpoint_path", "history_path",
+        "subject",
+        "split_strategy",
+        "n_train_windows",
+        "n_valid_windows",
+        "n_test_windows",
+        "train_loss",
+        "train_accuracy",
+        "valid_loss",
+        "valid_accuracy",
+        "cv_accuracy_mean",
+        "cv_accuracy_std",
+        "best_score",
+        "best_score_std",
+        "best_train_score",
+        "best_train_score_std",
+        "best_params",
+        "test_accuracy",
+        "test_balanced_accuracy",
+        "test_cohen_kappa",
+        "test_macro_f1",
+        "test_macro_precision",
+        "test_macro_recall",
+        "test_roc_auc",
+        "checkpoint_path",
+        "history_path",
     ]
     present = {key for row in results for key in row}
     ordered = [fieldname for fieldname in preferred if fieldname in present]
     return ordered + sorted(present.difference(ordered))
 
 
-def _write_results(path: Path, results: list[dict[str, str | float | int]]) -> None:
+def _write_results(path: Path, results: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = _result_fieldnames(results)
     with path.open("w", newline="", encoding="utf-8") as file:

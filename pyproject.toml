@@ -24,6 +24,7 @@ dependencies = [
 dev = [
     "ipykernel",
     "jupyterlab",
+    "pytest",
 ]
 
 [tool.setuptools.packages.find]

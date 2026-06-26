@@ -32,3 +32,4 @@
 
 # python -m pip install -e . --no-deps
 # python -m pip install lightning
+# pip install -U pytest

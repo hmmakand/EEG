@@ -5,6 +5,8 @@ from typing import Any, Protocol, cast
 import numpy as np
 from torch.utils.data import Dataset, Subset
 
+from eeg_bci.tracking.metrics import compute_metrics
+
 
 class IndexedDataset(Protocol):
     def __len__(self) -> int: ...
@@ -24,8 +26,52 @@ def collect_targets(dataset: Dataset) -> np.ndarray:
 
 
 def score_classifier(classifier: Any, dataset: Dataset) -> float:
+    """Return overall classification accuracy (legacy helper)."""
     y = collect_targets(dataset)
     return float(classifier.score(dataset, y=y))
+
+
+def evaluate_classifier(
+    classifier: Any,
+    dataset: Dataset,
+    *,
+    metrics: list[str] | None = None,
+    class_names: list[str] | None = None,
+    labels: list[int] | np.ndarray | None = None,
+) -> dict[str, Any]:
+    """Compute a configurable set of metrics on a trained classifier.
+
+    Parameters
+    ----------
+    classifier : Any
+        A trained ``EEGClassifier`` or any object with ``predict`` and
+        optionally ``predict_proba`` methods.
+    dataset : Dataset
+        Dataset yielding ``(x, y)`` samples.
+    metrics : list[str] | None
+        Metric names to compute. Defaults to the package defaults. Accuracy is
+        always included by the metrics layer for internal score stability.
+    class_names : list[str] | None
+        Optional class names for per-class reports and plots.
+    labels : list[int] | np.ndarray | None
+        Explicit label IDs in classifier/probability-column order.
+
+    Returns
+    -------
+    dict[str, Any]
+        Computed metrics. Always contains ``accuracy``.
+    """
+    y_true = collect_targets(dataset)
+    y_pred = classifier.predict(dataset)
+    y_prob = _predict_proba(classifier, dataset)
+    return compute_metrics(
+        y_true,
+        y_pred,
+        y_prob=y_prob,
+        class_names=class_names,
+        metrics=metrics,
+        labels=labels,
+    )
 
 
 def score_classifier_by_description(
@@ -33,18 +79,28 @@ def score_classifier_by_description(
     dataset: Dataset,
     *,
     description_key: str,
-) -> list[dict[str, int | float | str]]:
+    metrics: list[str] | None = None,
+    class_names: list[str] | None = None,
+    labels: list[int] | np.ndarray | None = None,
+) -> list[dict[str, Any]]:
     """Score a classifier on groups defined by Braindecode descriptions."""
 
     groups = _indices_by_description(dataset, description_key)
-    rows: list[dict[str, int | float | str]] = []
+    rows: list[dict[str, Any]] = []
     for group_name, indices in sorted(groups.items(), key=_sort_group_item):
         group_dataset = Subset(dataset, indices)
+        group_metrics = evaluate_classifier(
+            classifier,
+            group_dataset,
+            metrics=metrics,
+            class_names=class_names,
+            labels=labels,
+        )
         rows.append(
             {
                 description_key: group_name,
                 "n_windows": len(indices),
-                "test_acc": score_classifier(classifier, group_dataset),
+                **group_metrics,
             }
         )
     return rows
@@ -56,6 +112,15 @@ def latest_history_value(classifier: Any, key: str, default: float = 0.0) -> flo
     except (IndexError, KeyError):
         return default
     return float(value)
+
+
+def _predict_proba(classifier: Any, dataset: Dataset) -> np.ndarray | None:
+    if not hasattr(classifier, "predict_proba"):
+        return None
+    try:
+        return np.asarray(classifier.predict_proba(dataset))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _as_int(value: Any) -> int:

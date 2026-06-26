@@ -19,7 +19,7 @@ python scripts/braindecode_scripts/train_loso.py experiment=loso
 Runs are organized for manuscript-friendly comparison across experiments, datasets, models, subjects/folds, and seeds.
 
 ```text
-outputs/runs/{experiment}/{dataset}/{model}/{timestamp}__seed{seed}/
+outputs/runs/{dataset}/{experiment}/{model}/{timestamp}__seed{seed}/
   logs/run.log
   metrics/final_metrics.yaml
   metrics/final_metrics.json
@@ -29,8 +29,8 @@ outputs/runs/{experiment}/{dataset}/{model}/{timestamp}__seed{seed}/
   checkpoints/model.pt
   results/
 
-outputs/tensorboard/{experiment}/{dataset}/{model}/{subject_or_fold}__{timestamp}__seed{seed}/
-outputs/results_master.csv
+outputs/tensorboard/{dataset}/{experiment}/{model}/{run_id}/
+outputs/results/{dataset}/results_master_{experiment}.csv
 ```
 
 Use TensorBoard to compare all runs:
@@ -42,6 +42,6 @@ tensorboard --logdir outputs/tensorboard
 Or compare one experiment/dataset across models:
 
 ```bash
-tensorboard --logdir outputs/tensorboard/within_subject_smoke/bcic_iv_2a
+tensorboard --logdir outputs/tensorboard/bcic_iv_2a/within_subject_smoke
 ```
 
