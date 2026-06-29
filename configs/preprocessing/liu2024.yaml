@@ -1,0 +1,22 @@
+# Dataset-specific preprocessing for Liu2024 (Liu et al., 2024).
+#
+# Liu2024: 29 EEG channels, 500 Hz, left/right hand motor imagery,
+# 40 trials per subject (20 per class), 4 s trial duration.
+#
+# The pipeline matches the exploratory notebook:
+#   - keep only EEG channels (drop EOG/stim)
+#   - convert volts -> microvolts
+#   - band-pass filter in the motor-imagery band
+#   - exponential moving standardization
+#   - one 4 s window per trial
+
+low_cut_hz: 8.0
+high_cut_hz: 30.0
+resample_sfreq: null
+standardize: true
+convert_to_microvolts: true
+window_size_s: 4.0
+window_stride_s: 4.0
+trial_start_offset_s: 0.0
+trial_stop_offset_s: 0.0
+preload: true

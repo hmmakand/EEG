@@ -2,16 +2,16 @@
 
 ```bash
 # Within-subject smoke run
-python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=within_subject_smoke
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=bcic_iv_2a_within_subject_smoke
 
 # Full within-subject run
-python scripts/braindecode_scripts/train_within_subjects.py experiment=within_subject_full
+python scripts/braindecode_scripts/train_within_subjects.py experiment=bcic_iv_2a_within_subject_full
 
 # Subject-pooled run
-python scripts/braindecode_scripts/train_subject_pooled.py experiment=subject_pooled
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=bcic_iv_2a_subject_pooled
 
 # Leave-one-subject-out run
-python scripts/braindecode_scripts/train_loso.py experiment=loso
+python scripts/braindecode_scripts/train_loso.py experiment=bcic_iv_2a_loso
 ```
 
 ## Experiment tracking
@@ -45,3 +45,18 @@ Or compare one experiment/dataset across models:
 tensorboard --logdir outputs/tensorboard/bcic_iv_2a/within_subject_smoke
 ```
 
+Liu2024
+
+
+```bash
+# Within-subject smoke run
+python scripts/braindecode_scripts/train_within_subject_smoke.py experiment=liu2024_within_subject_smoke
+
+# Full within-subject run
+python scripts/braindecode_scripts/train_within_subjects.py experiment=liu2024_within_subject_full
+
+# # Subject-pooled run
+python scripts/braindecode_scripts/train_subject_pooled.py experiment=liu2024_subject_pooled
+
+# # Leave-one-subject-out run
+python scripts/braindecode_scripts/train_loso.py experiment=liu2024_loso

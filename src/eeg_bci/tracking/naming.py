@@ -90,12 +90,21 @@ def run_id(scope: str, seed: int, *, created_at: str | None = None) -> str:
     return f"{slugify(scope)}__seed{seed}__{created_at or timestamp()}"
 
 
-def tensorboard_dir(cfg: DictConfig, run_id_value: str, *, base_dir: str = "outputs/tensorboard") -> Path:
-    return (
+def tensorboard_dir(
+    cfg: DictConfig,
+    run_name: str,
+    scope: str | None = None,
+    *,
+    base_dir: str = "outputs/tensorboard",
+) -> Path:
+    path = (
         Path(base_dir)
         / dataset_label(cfg.dataset)
         / experiment_label(cfg)
         / model_label(cfg.model)
-        / run_id_value
+        / run_name
     )
+    if scope is not None:
+        path = path / str(scope)
+    return path
 

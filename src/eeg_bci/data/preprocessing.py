@@ -9,6 +9,7 @@ resamples, and optionally applies exponential moving standardization.
 from __future__ import annotations
 
 import mne
+import numpy as np
 from braindecode.preprocessing import (
     Preprocessor,
     exponential_moving_standardize,
@@ -17,17 +18,32 @@ from braindecode.preprocessing import (
 from omegaconf import DictConfig
 
 
+def _volts_to_microvolts(data: np.ndarray) -> np.ndarray:
+    """Convert EEG data from volts to microvolts."""
+    return data * 1e6
+
+
 def build_preprocessors(preprocessing_cfg: DictConfig) -> list[Preprocessor]:
     """Build the ordered Braindecode preprocessing pipeline from config."""
 
     preprocessors = [
-        Preprocessor("pick_types", eeg=True, meg=False, stim=False),
+        Preprocessor("pick_types", eeg=True, meg=False, stim=False, eog=False),
+    ]
+    if bool(getattr(preprocessing_cfg, "convert_to_microvolts", False)):
+        preprocessors.append(
+            Preprocessor(
+                _volts_to_microvolts,
+                channel_wise=True,
+                apply_on_array=True,
+            )
+        )
+    preprocessors.append(
         Preprocessor(
             "filter",
             l_freq=preprocessing_cfg.low_cut_hz,
             h_freq=preprocessing_cfg.high_cut_hz,
-        ),
-    ]
+        )
+    )
     if preprocessing_cfg.resample_sfreq is not None:
         preprocessors.append(
             Preprocessor("resample", sfreq=float(preprocessing_cfg.resample_sfreq))

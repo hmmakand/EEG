@@ -41,14 +41,18 @@ def main(cfg: DictConfig) -> None:
     configure_logging(output_dir / "logs")
 
     if not _is_subject_pooled_experiment():
-        logger.error("train_subject_pooled.py is only for experiment=subject_pooled.")
+        logger.error(
+            "train_subject_pooled.py is only for experiments ending with "
+            "'subject_pooled'."
+        )
         return
 
     logger.info("resolved_config:\n%s", OmegaConf.to_yaml(cfg))
     seed_everything(int(cfg.seed))
 
-    run_id = f"{subject_scope(cfg.dataset.subject_ids)}__{output_dir.name}"
-    tb_dir = tensorboard_dir(cfg, run_id)
+    scope = subject_scope(cfg.dataset.subject_ids)
+    run_id = f"{scope}__{output_dir.name}"
+    tb_dir = tensorboard_dir(cfg, output_dir.name, scope)
     save_run_metadata(output_dir, cfg=cfg, run_id=run_id, tensorboard_dir=tb_dir)
 
     device = _resolve_device(str(cfg.device))
@@ -132,10 +136,12 @@ def _resolve_device(device_name: str) -> torch.device:
 
 def _is_subject_pooled_experiment() -> bool:
     experiment = HydraConfig.get().runtime.choices.get("experiment")
-    return experiment == "subject_pooled"
+    if experiment is None:
+        return False
+    return str(experiment).endswith("subject_pooled")
 
 
 if __name__ == "__main__":
     if not any(arg.startswith("experiment=") for arg in sys.argv[1:]):
-        sys.argv.append("experiment=subject_pooled")
+        sys.argv.append("experiment=bcic_iv_2a_subject_pooled")
     main()

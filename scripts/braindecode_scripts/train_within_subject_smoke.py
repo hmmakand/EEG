@@ -47,15 +47,16 @@ def main(cfg: DictConfig) -> None:
 
     if not _is_within_subject_smoke_experiment():
         logger.error(
-            "train_within_subject_smoke.py is only for experiment=within_subject_smoke."
+            "train_within_subject_smoke.py is only for experiments ending with 'within_subject_smoke'."
         )
         return
 
     logger.info("resolved_config:\n%s", OmegaConf.to_yaml(cfg))
     seed_everything(int(cfg.seed))
 
-    run_id = f"{subject_scope(cfg.dataset.subject_ids)}__{output_dir.name}"
-    tb_dir = tensorboard_dir(cfg, run_id)
+    scope = subject_scope(cfg.dataset.subject_ids)
+    run_id = f"{scope}__{output_dir.name}"
+    tb_dir = tensorboard_dir(cfg, output_dir.name, scope)
     save_run_metadata(output_dir, cfg=cfg, run_id=run_id, tensorboard_dir=tb_dir)
 
     device = _resolve_device(str(cfg.device))
@@ -143,7 +144,9 @@ def _resolve_device(device_name: str) -> torch.device:
 
 def _is_within_subject_smoke_experiment() -> bool:
     experiment = HydraConfig.get().runtime.choices.get("experiment")
-    return experiment == "within_subject_smoke"
+    if experiment is None:
+        return False
+    return str(experiment).endswith("within_subject_smoke")
 
 
 if __name__ == "__main__":

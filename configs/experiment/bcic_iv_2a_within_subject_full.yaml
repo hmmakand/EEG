@@ -1,10 +1,14 @@
 # @package _global_
-experiment_name: within_subject_full
+experiment_name: bcic_iv_2a_within_subject_full
 # Full experiment preset: real BCI IV 2a data + dataset-specific preprocessing.
 defaults:
   - override /dataset: bcic_iv_2a
   - override /preprocessing: bcic_iv_2a
   - override /training: default
 
+dataset:
+  split:
+    strategy: session_train_test
+
 training:
-  max_epochs: 10
+  max_epochs: 2

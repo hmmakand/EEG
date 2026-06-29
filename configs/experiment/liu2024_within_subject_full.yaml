@@ -1,0 +1,14 @@
+# @package _global_
+experiment_name: liu2024_within_subject_full
+# Full experiment preset: real Liu2024 data + dataset-specific preprocessing.
+defaults:
+  - override /dataset: liu2024
+  - override /preprocessing: liu2024
+  - override /training: default
+
+dataset:
+  split:
+    strategy: chronological_train_test
+
+training:
+  max_epochs: 2

@@ -1,0 +1,20 @@
+# @package _global_
+experiment_name: liu2024_loso
+# Leave-one-subject-out preset: split each subject chronologically, train on
+# non-held-out subjects' chronological training windows, and evaluate on the
+# held-out subject's chronological test windows.
+defaults:
+  - override /dataset: liu2024
+  - override /preprocessing: liu2024
+  - override /training: default
+
+dataset:
+  split:
+    strategy: chronological_leave_one_subject_out
+    subject:
+      column: subject
+
+training:
+  max_epochs: 2
+  validation:
+    enabled: false

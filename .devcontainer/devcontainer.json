@@ -8,7 +8,8 @@
         "gpu": true
     },
     "runArgs": [
-        "--gpus=all"
+        "--gpus=all",
+		"--network=host"
     ]
 
 	// Features to add to the dev container. More info: https://containers.dev/features.

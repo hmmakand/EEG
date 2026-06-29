@@ -19,7 +19,7 @@ if str(SRC) not in sys.path:
 
 from eeg_bci.braindecode_training.trainer import train_from_split_plan
 from eeg_bci.data.datasets import build_dataset
-from eeg_bci.data.splitting import LEAVE_ONE_SUBJECT_OUT, SplitPlan, make_leave_one_subject_out_folds
+from eeg_bci.data.splitting import make_leave_one_subject_out_folds
 from eeg_bci.models.factory import build_model
 from eeg_bci.tracking.artifacts import prepare_run_dirs, save_dataset_info, save_final_metrics, save_run_metadata
 from eeg_bci.tracking.logging import configure_logging
@@ -49,14 +49,19 @@ def main(cfg: DictConfig) -> None:
     configure_logging(output_dir / "logs")
 
     if not _is_loso_experiment():
-        logger.error("train_loso.py is only for experiment=loso.")
+        logger.error("train_loso.py is only for experiments ending with 'loso'.")
         return
 
     logger.info("resolved_config:\n%s", OmegaConf.to_yaml(cfg))
     seed_everything(int(cfg.seed))
 
     parent_run_id = f"all_subjects__{output_dir.name}"
-    save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id))
+    save_run_metadata(
+        output_dir,
+        cfg=cfg,
+        run_id=parent_run_id,
+        tensorboard_dir=tensorboard_dir(cfg, output_dir.name),
+    )
 
     device = _resolve_device(str(cfg.device))
     dataset, dataset_info = build_dataset(cfg.dataset, cfg.preprocessing)
@@ -79,15 +84,8 @@ def main(cfg: DictConfig) -> None:
         fold_output_dir = output_dir / label
         prepare_run_dirs(fold_output_dir)
         run_id = f"{label}__{output_dir.name}"
-        tb_dir = tensorboard_dir(cfg, run_id)
-        split_plan = SplitPlan(
-            split_strategy=LEAVE_ONE_SUBJECT_OUT,
-            train_pool=fold.train_set,
-            train_set=fold.train_set,
-            valid_set=fold.valid_set,
-            test_set=fold.test_set,
-            resampler=None,
-        )
+        tb_dir = tensorboard_dir(cfg, output_dir.name, label)
+        split_plan = fold.split_plan
         metrics = train_from_split_plan(
             model,
             split_plan,
@@ -171,8 +169,21 @@ def main(cfg: DictConfig) -> None:
     _write_results(results_path, results)
     summary = _summarize_results(results)
     save_final_metrics(output_dir, {f"loso_{key}": value for key, value in summary.items()})
-    save_dataset_info(output_dir, dataset_info, extra={"dataset": dataset_label(cfg.dataset), "split_strategy": LEAVE_ONE_SUBJECT_OUT})
-    save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id), status="success")
+    save_dataset_info(
+        output_dir,
+        dataset_info,
+        extra={
+            "dataset": dataset_label(cfg.dataset),
+            "split_strategy": str(cfg.dataset.split.strategy),
+        },
+    )
+    save_run_metadata(
+        output_dir,
+        cfg=cfg,
+        run_id=parent_run_id,
+        tensorboard_dir=tensorboard_dir(cfg, output_dir.name),
+        status="success",
+    )
     logger.info("loso_results=%s", results_path)
     for key, value in summary.items():
         logger.info("loso_%s=%.4f", key, value)
@@ -232,10 +243,12 @@ def _resolve_device(device_name: str) -> torch.device:
 
 def _is_loso_experiment() -> bool:
     experiment = HydraConfig.get().runtime.choices.get("experiment")
-    return experiment == "loso"
+    if experiment is None:
+        return False
+    return str(experiment).endswith("loso")
 
 
 if __name__ == "__main__":
     if not any(arg.startswith("experiment=") for arg in sys.argv[1:]):
-        sys.argv.append("experiment=loso")
+        sys.argv.append("experiment=bcic_iv_2a_loso")
     main()

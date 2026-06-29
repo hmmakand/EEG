@@ -13,7 +13,7 @@ subject_ids:
   - 8
   - 9
 split:
-  strategy: session_train_test
+  strategy: session_train_valid_test
   session:
     column: session
     train_key: 0train

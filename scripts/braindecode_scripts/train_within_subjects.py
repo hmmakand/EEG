@@ -50,7 +50,12 @@ def main(cfg: DictConfig) -> None:
     subject_ids = _subject_ids(cfg.dataset)
     results: list[dict[str, Any]] = []
     parent_run_id = f"all_subjects__{output_dir.name}"
-    save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id))
+    save_run_metadata(
+        output_dir,
+        cfg=cfg,
+        run_id=parent_run_id,
+        tensorboard_dir=tensorboard_dir(cfg, output_dir.name),
+    )
 
     for subject_id in subject_ids:
         label = subject_label(subject_id)
@@ -64,7 +69,7 @@ def main(cfg: DictConfig) -> None:
         subject_output_dir = output_dir / f"subject_{label}"
         prepare_run_dirs(subject_output_dir)
         run_id = f"{label}__{output_dir.name}"
-        tb_dir = tensorboard_dir(cfg, run_id)
+        tb_dir = tensorboard_dir(cfg, output_dir.name, label)
         metrics = train_from_split_plan(
             model,
             split_plan,
@@ -140,7 +145,13 @@ def main(cfg: DictConfig) -> None:
     _write_results(results_path, results)
     summary = summarize_scalar_metrics(results)
     save_final_metrics(output_dir, {f"within_subject_{key}": value for key, value in summary.items()})
-    save_run_metadata(output_dir, cfg=cfg, run_id=parent_run_id, tensorboard_dir=tensorboard_dir(cfg, parent_run_id), status="success")
+    save_run_metadata(
+        output_dir,
+        cfg=cfg,
+        run_id=parent_run_id,
+        tensorboard_dir=tensorboard_dir(cfg, output_dir.name),
+        status="success",
+    )
     logger.info("within_subject_results=%s", results_path)
     for key, value in summary.items():
         logger.info("within_subject_%s=%.4f", key, value)

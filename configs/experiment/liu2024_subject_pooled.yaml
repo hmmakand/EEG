@@ -1,0 +1,15 @@
+# @package _global_
+experiment_name: liu2024_subject_pooled
+# Subject-pooled preset: one model trained on all configured Liu2024 subjects
+# using a chronological train/test split.
+defaults:
+  - override /dataset: liu2024
+  - override /preprocessing: liu2024
+  - override /training: default
+
+dataset:
+  split:
+    strategy: chronological_train_test
+
+training:
+  max_epochs: 2
