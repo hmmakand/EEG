@@ -1,3 +1,7 @@
+smoke, full adn pooled will only run on train_test, train_valid_test, cross_validation_test and grid_search_test
+
+loso will work only with loso yaml and inside has train, val, test logic
+
 # BRAINDECODE
 
 ```bash

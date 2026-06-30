@@ -1,8 +1,16 @@
-"""Outer train/test split source builders."""
+"""Outer train/test split source builders.
+
+Adding a new dataset-structure-dependent split mechanism only requires
+writing one ``build_xxx_source`` function with the signature below and
+registering it in ``SOURCE_BUILDERS`` -- no changes are needed in
+``plans.py``, ``loso.py``, or ``trainer.py``, since those only deal with the
+dataset-agnostic split *method* applied on top of the resulting
+``SplitSource``.
+"""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 import torch
@@ -10,8 +18,13 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import Dataset, Subset, random_split
 
 from eeg_bci.data.adapters import BraindecodeLikeDataset, TensorDatasetFromBraindecode
-from eeg_bci.data.splitting.config import split_lengths
+from eeg_bci.data.splitting.config import section, split_lengths
 from eeg_bci.data.splitting.description import split_by_session_description
+from eeg_bci.data.splitting.strategies import (
+    SOURCE_CHRONOLOGICAL,
+    SOURCE_RANDOM,
+    SOURCE_SESSION,
+)
 from eeg_bci.data.splitting.types import SplitSource
 
 
@@ -32,13 +45,19 @@ def make_chronological_split_source(
     dataset: BraindecodeLikeDataset,
     split_cfg: DictConfig,
 ) -> SplitSource:
-    """Create the outer train/test source from chronological window order."""
+    """Create the outer train/test source from chronological window order.
+
+    The split is computed independently per subject (see
+    ``_chronological_split_indices``) so that pooling multiple subjects does
+    not mix their unrelated, recording-local time axes together.
+    """
 
     test_size = float(split_cfg.get("test_size", 0.2))
     stratify = bool(split_cfg.get("stratify", True))
+    subject_column = _chronological_subject_column(split_cfg)
     tensor_dataset = TensorDatasetFromBraindecode(dataset)
     train_indices, test_indices = _chronological_split_indices(
-        dataset, test_size=test_size, stratify=stratify
+        dataset, test_size=test_size, stratify=stratify, subject_column=subject_column
     )
     train_indices = _sort_chronological_indices(dataset, train_indices)
     test_indices = _sort_chronological_indices(dataset, test_indices)
@@ -46,6 +65,80 @@ def make_chronological_split_source(
         train_pool=Subset(tensor_dataset, train_indices.tolist()),
         test_set=Subset(tensor_dataset, test_indices.tolist()),
     )
+
+
+def _chronological_subject_column(split_cfg: DictConfig) -> str:
+    subject_cfg = section(split_cfg, "subject")
+    return str(subject_cfg.get("column", split_cfg.get("subject_column", "subject")))
+
+
+def build_random_source(
+    dataset: BraindecodeLikeDataset,
+    split_cfg: DictConfig | None,
+    *,
+    seed: int,
+) -> SplitSource:
+    """Create the outer train/test source from a deterministic random split."""
+
+    test_size = float(split_cfg.get("test_size", 0.2)) if split_cfg is not None else 0.2
+    train_set, test_set = split_random_train_test(dataset, test_size=test_size, seed=seed)
+    return SplitSource(train_pool=train_set, test_set=test_set)
+
+
+class SourceBuilder(Protocol):
+    def __call__(
+        self,
+        dataset: BraindecodeLikeDataset,
+        split_cfg: DictConfig | None,
+        *,
+        seed: int,
+    ) -> SplitSource: ...
+
+
+def _require_split_cfg(split_cfg: DictConfig | None, source: str) -> DictConfig:
+    if split_cfg is None:
+        raise ValueError(f"dataset.split must be configured to use source={source!r}.")
+    return split_cfg
+
+
+def _build_session_source(
+    dataset: BraindecodeLikeDataset, split_cfg: DictConfig | None, *, seed: int
+) -> SplitSource:
+    del seed
+    return make_session_split_source(dataset, _require_split_cfg(split_cfg, SOURCE_SESSION))
+
+
+def _build_chronological_source(
+    dataset: BraindecodeLikeDataset, split_cfg: DictConfig | None, *, seed: int
+) -> SplitSource:
+    del seed
+    return make_chronological_split_source(
+        dataset, _require_split_cfg(split_cfg, SOURCE_CHRONOLOGICAL)
+    )
+
+
+SOURCE_BUILDERS: dict[str, SourceBuilder] = {
+    SOURCE_SESSION: _build_session_source,
+    SOURCE_CHRONOLOGICAL: _build_chronological_source,
+    SOURCE_RANDOM: build_random_source,
+}
+
+
+def build_split_source(
+    source: str,
+    dataset: BraindecodeLikeDataset,
+    split_cfg: DictConfig | None,
+    *,
+    seed: int,
+) -> SplitSource:
+    """Build the outer train/test source for a registered split source name."""
+
+    try:
+        builder = SOURCE_BUILDERS[source]
+    except KeyError as exc:
+        available = ", ".join(sorted(SOURCE_BUILDERS))
+        raise ValueError(f"Unsupported split source {source!r}. Available: {available}.") from exc
+    return builder(dataset, split_cfg, seed=seed)
 
 
 def split_by_description(
@@ -104,30 +197,54 @@ def _chronological_split_indices(
     dataset: BraindecodeLikeDataset,
     test_size: float,
     stratify: bool,
+    subject_column: str = "subject",
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return chronologically stratified train and test indices."""
+    """Return chronologically stratified train and test indices.
+
+    ``i_start_in_trial`` is a sample offset relative to each subject's own
+    recording, not a timeline shared across subjects. Pooling multiple
+    subjects and sorting/cutting on this field globally would interleave
+    unrelated recordings as if they happened on one shared clock. To avoid
+    that, the chronological cutoff is computed independently per subject (and
+    per class, when ``stratify`` is true) and the resulting indices are
+    unioned. A dataset with a single subject, or no subject column at all,
+    reduces to one group and behaves exactly as a global split would.
+    """
 
     metadata = cast(Any, dataset).get_metadata()
     targets = metadata["target"].to_numpy()
+    subject_values = (
+        metadata[subject_column].to_numpy()
+        if subject_column in metadata.columns
+        else np.zeros(len(metadata), dtype=int)
+    )
 
-    if stratify:
-        train_indices: list[int] = []
-        test_indices: list[int] = []
-        for label in np.unique(targets):
-            class_idx = np.where(targets == label)[0]
-            class_idx_sorted = class_idx[
-                np.argsort(metadata["i_start_in_trial"].iloc[class_idx].to_numpy())
-            ]
-            _, n_test_class = split_lengths(
-                len(class_idx_sorted), holdout_size=test_size
-            )
-            train_indices.extend(class_idx_sorted[:-n_test_class].tolist())
-            test_indices.extend(class_idx_sorted[-n_test_class:].tolist())
-        return np.array(train_indices), np.array(test_indices)
+    train_indices: list[int] = []
+    test_indices: list[int] = []
+    for subject_value in np.unique(subject_values):
+        subject_idx = np.where(subject_values == subject_value)[0]
 
-    sorted_idx = metadata["i_start_in_trial"].to_numpy().argsort()
-    train_len, _ = split_lengths(len(sorted_idx), holdout_size=test_size)
-    return sorted_idx[:train_len], sorted_idx[train_len:]
+        if stratify:
+            for label in np.unique(targets[subject_idx]):
+                class_idx = subject_idx[targets[subject_idx] == label]
+                class_idx_sorted = class_idx[
+                    np.argsort(metadata["i_start_in_trial"].iloc[class_idx].to_numpy())
+                ]
+                _, n_test_class = split_lengths(
+                    len(class_idx_sorted), holdout_size=test_size
+                )
+                train_indices.extend(class_idx_sorted[:-n_test_class].tolist())
+                test_indices.extend(class_idx_sorted[-n_test_class:].tolist())
+            continue
+
+        subject_idx_sorted = subject_idx[
+            np.argsort(metadata["i_start_in_trial"].iloc[subject_idx].to_numpy())
+        ]
+        train_len, _ = split_lengths(len(subject_idx_sorted), holdout_size=test_size)
+        train_indices.extend(subject_idx_sorted[:train_len].tolist())
+        test_indices.extend(subject_idx_sorted[train_len:].tolist())
+
+    return np.array(train_indices), np.array(test_indices)
 
 
 def _sort_chronological_indices(

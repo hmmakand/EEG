@@ -5,7 +5,8 @@ data_dir: data/moabb
 subject_ids:
   - 1
 split:
-  strategy: chronological_train_test # chronological should used
+  source: chronological
+  method: train_test
   test_size: 0.2
   stratify: true
   validation:

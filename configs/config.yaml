@@ -13,4 +13,4 @@ output_dir: ${hydra:runtime.output_dir}
 
 hydra:
   run:
-    dir: outputs/runs/${dataset.label}/${experiment_name}/${model.label}/${now:%Y-%m-%d_%H-%M-%S}__seed${seed}
+    dir: outputs/runs/${dataset.label}/${experiment_name}/${dataset.split.method}/${model.label}/${now:%Y-%m-%d_%H-%M-%S}__seed${seed}

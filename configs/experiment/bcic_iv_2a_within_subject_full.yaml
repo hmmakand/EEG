@@ -8,8 +8,10 @@ defaults:
 
 dataset:
   split:
-    strategy: session_grid_search_test
+    method: grid_search_test
 
 training:
-  max_epochs: 100
-;
+  max_epochs: 5
+
+# param_grid:
+#     optimizer__lr: 0.000625

@@ -9,7 +9,7 @@ defaults:
 
 dataset:
   split:
-    strategy: session_train_test
+    method: grid_search_test
 
 training:
-  max_epochs: 2
+  max_epochs: 5

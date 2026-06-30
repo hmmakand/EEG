@@ -1,24 +1,28 @@
 """Dataset splitting utilities built around outer splits and split plans.
 
-For BCI Competition IV 2a / MOABB BNCI2014_001, Braindecode exposes the
-recording protocol in the dataset description. The important convention is:
+A dataset's ``split`` config sets two independent, orthogonal keys:
 
-- session=0train is the training pool.
-- session=1test is the final test set.
+- ``source`` -- how train_pool/test_set are carved out of the raw dataset
+  (dataset-structure-dependent, e.g. ``session`` for BCI IV 2a's official
+  ``0train``/``1test`` recording protocol, ``chronological`` for datasets
+  without a session column).
+- ``method`` -- the dataset-agnostic training/evaluation methodology applied
+  on top of the resulting (train_pool, test_set) pair (``train_test``,
+  ``train_valid_test``, ``cross_validation_test``, ``grid_search_test``,
+  ``leave_one_subject_out``).
 
-All validation, cross-validation, and grid-search resampling must happen inside
+All validation, cross-validation, and grid-search resampling happens inside
 train_pool. The final test_set is never used for model selection.
 """
 
 from __future__ import annotations
 
-from eeg_bci.data.splitting.api import split_train_eval, split_train_test
+from eeg_bci.data.splitting.config import resolved_source_and_method, resolved_split_label
 from eeg_bci.data.splitting.loso import make_leave_one_subject_out_folds
 from eeg_bci.data.splitting.plans import (
-    make_braindecode_protocol_split,
-    make_chronological_protocol_split,
     make_grid_search_plan,
     make_loso_plan,
+    make_protocol_split,
     make_resampled_plan,
     make_split_plan,
     make_train_test_plan,
@@ -31,30 +35,23 @@ from eeg_bci.data.splitting.resampling import (
     make_resampler,
 )
 from eeg_bci.data.splitting.sources import (
+    SOURCE_BUILDERS,
+    build_split_source,
     split_by_description,
     split_chronological_train_test,
     split_random_train_test,
 )
 from eeg_bci.data.splitting.strategies import (
-    CHRONOLOGICAL_CROSS_VALIDATION_TEST,
-    CHRONOLOGICAL_GRID_SEARCH_TEST,
-    CHRONOLOGICAL_LEAVE_ONE_SUBJECT_OUT,
-    CHRONOLOGICAL_SPLIT_STRATEGIES,
-    CHRONOLOGICAL_TRAIN_TEST,
-    CHRONOLOGICAL_TRAIN_VALID_TEST,
     CROSS_VALIDATION_TEST,
     GRID_SEARCH_TEST,
-    LOSO_SPLIT_STRATEGIES,
     LOSO,
-    SESSION_CROSS_VALIDATION_TEST,
-    SESSION_GRID_SEARCH_TEST,
-    SESSION_LEAVE_ONE_SUBJECT_OUT,
-    SESSION_SPLIT_STRATEGIES,
-    SESSION_TRAIN_TEST,
-    SESSION_TRAIN_VALID_TEST,
+    METHODS,
+    SOURCE_CHRONOLOGICAL,
+    SOURCE_RANDOM,
+    SOURCE_SESSION,
     TRAIN_TEST,
     TRAIN_VALID_TEST,
-    split_method,
+    split_label,
 )
 from eeg_bci.data.splitting.types import (
     CrossSubjectFold,
@@ -64,45 +61,37 @@ from eeg_bci.data.splitting.types import (
 )
 
 __all__ = [
-    "CHRONOLOGICAL_CROSS_VALIDATION_TEST",
-    "CHRONOLOGICAL_GRID_SEARCH_TEST",
-    "CHRONOLOGICAL_LEAVE_ONE_SUBJECT_OUT",
-    "CHRONOLOGICAL_SPLIT_STRATEGIES",
-    "CHRONOLOGICAL_TRAIN_TEST",
-    "CHRONOLOGICAL_TRAIN_VALID_TEST",
     "CROSS_VALIDATION_TEST",
     "CrossSubjectFold",
     "GRID_SEARCH_TEST",
-    "LOSO_SPLIT_STRATEGIES",
     "HoldoutSplit",
     "LOSO",
+    "METHODS",
     "Resampler",
-    "SESSION_CROSS_VALIDATION_TEST",
-    "SESSION_GRID_SEARCH_TEST",
-    "SESSION_LEAVE_ONE_SUBJECT_OUT",
-    "SESSION_SPLIT_STRATEGIES",
-    "SESSION_TRAIN_TEST",
-    "SESSION_TRAIN_VALID_TEST",
+    "SOURCE_BUILDERS",
+    "SOURCE_CHRONOLOGICAL",
+    "SOURCE_RANDOM",
+    "SOURCE_SESSION",
     "SplitPlan",
     "SplitSource",
     "TRAIN_TEST",
     "TRAIN_VALID_TEST",
-    "make_braindecode_protocol_split",
-    "make_chronological_protocol_split",
+    "build_split_source",
     "make_chronological_resampler",
     "make_grid_search_plan",
     "make_leave_one_subject_out_folds",
     "make_loso_plan",
+    "make_protocol_split",
     "make_resampled_plan",
     "make_resampler",
     "make_split_plan",
     "make_train_test_plan",
     "make_train_valid_test_plan",
+    "resolved_source_and_method",
+    "resolved_split_label",
     "split_by_description",
     "split_chronological_train_test",
-    "split_method",
+    "split_label",
     "split_random_train_test",
-    "split_train_eval",
-    "split_train_test",
     "split_train_valid",
 ]

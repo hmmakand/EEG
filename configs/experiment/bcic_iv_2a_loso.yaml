@@ -9,7 +9,7 @@ defaults:
 
 dataset:
   split:
-    strategy: session_leave_one_subject_out
+    method: leave_one_subject_out
     session:
       column: session
       train_key: 0train

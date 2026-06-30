@@ -8,7 +8,7 @@ defaults:
 
 dataset:
   split:
-    strategy: chronological_train_test
+    method: train_test
 
 training:
   max_epochs: 2

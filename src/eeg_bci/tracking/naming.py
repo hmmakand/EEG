@@ -7,6 +7,8 @@ from typing import Any
 
 from omegaconf import DictConfig, OmegaConf
 
+from eeg_bci.data.splitting import resolved_split_label
+
 
 def slugify(value: object) -> str:
     """Return a filesystem-friendly identifier."""
@@ -67,8 +69,9 @@ def subject_scope(subject_ids: Any) -> str:
 def experiment_label(cfg: DictConfig) -> str:
     if "experiment_name" in cfg:
         return slugify(cfg.experiment_name)
-    split = cfg.dataset.split.strategy if "dataset" in cfg and "split" in cfg.dataset else "run"
-    return slugify(split)
+    if "dataset" in cfg and "split" in cfg.dataset:
+        return slugify(resolved_split_label(cfg.dataset.split))
+    return "run"
 
 
 def class_names_from_mapping(dataset_cfg: DictConfig) -> list[str] | None:
@@ -101,6 +104,7 @@ def tensorboard_dir(
         Path(base_dir)
         / dataset_label(cfg.dataset)
         / experiment_label(cfg)
+        / str(cfg.dataset.split.method)
         / model_label(cfg.model)
         / run_name
     )

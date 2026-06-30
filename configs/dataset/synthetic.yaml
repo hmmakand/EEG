@@ -6,6 +6,7 @@ n_times: 256
 n_classes: 2
 sfreq: 128
 split:
-  strategy: random
+  source: random
+  method: train_test
   test_size: 0.2
 noise_std: 0.5

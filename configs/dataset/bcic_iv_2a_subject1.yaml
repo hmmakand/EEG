@@ -5,7 +5,8 @@ data_dir: data/moabb
 subject_ids:
   - 3
 split:
-  strategy: session_train_valid_test
+  source: session
+  method: train_valid_test
   session:
     column: session
     train_key: 0train

@@ -102,6 +102,7 @@ def main(cfg: DictConfig) -> None:
             Path(get_original_cwd()),
             str(cfg.experiment_name),
             dataset_label(cfg.dataset),
+            str(cfg.dataset.split.method),
         ),
         {
             **metrics,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from omegaconf import DictConfig
 
-from eeg_bci.data.splitting.strategies import SESSION_TRAIN_TEST
+from eeg_bci.data.splitting.strategies import SOURCE_RANDOM, TRAIN_TEST, split_label
 
 
 def section(split_cfg: DictConfig, name: str) -> DictConfig:
@@ -12,17 +12,31 @@ def section(split_cfg: DictConfig, name: str) -> DictConfig:
     return value if isinstance(value, DictConfig) else split_cfg
 
 
-def configured_strategy(split_cfg: DictConfig | None) -> str:
+def resolved_source_and_method(split_cfg: DictConfig | None) -> tuple[str, str]:
+    """Resolve a dataset's split config into a (source, method) pair.
+
+    A dataset's ``split`` config must set both ``source`` and ``method``
+    explicitly (see ``splitting/strategies.py``). A missing ``split`` block
+    entirely defaults to a plain random train/test split.
+    """
+
     if split_cfg is None:
-        return "random"
-    return str(split_cfg.get("split_strategy", split_cfg.get("strategy", "random")))
+        return SOURCE_RANDOM, TRAIN_TEST
+
+    source = split_cfg.get("source", None)
+    method = split_cfg.get("method", None)
+    if source is None or method is None:
+        raise ValueError(
+            "dataset.split must set both 'source' and 'method', e.g. "
+            "{source: session, method: train_valid_test}."
+        )
+    return str(source), str(method)
 
 
-def session_split_strategy(split_cfg: DictConfig) -> str:
-    strategy = configured_strategy(split_cfg)
-    if strategy == "description":
-        return SESSION_TRAIN_TEST
-    return strategy
+def resolved_split_label(split_cfg: DictConfig | None) -> str:
+    """Human-readable (source, method) label for logging/display."""
+
+    return split_label(*resolved_source_and_method(split_cfg))
 
 
 def validation_size(split_cfg: DictConfig) -> float:

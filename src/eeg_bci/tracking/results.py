@@ -52,11 +52,32 @@ MASTER_COLUMNS = [
 ]
 
 
-def master_result_path(original_cwd: Path, experiment: str, dataset: str) -> Path:
-    """Return the grouped master-result CSV path."""
+def master_result_path(
+    original_cwd: Path,
+    experiment: str,
+    dataset: str,
+    method: str,
+) -> Path:
+    """Return the grouped master-result CSV path.
+
+    Results are grouped into a ``{dataset}/{method}`` directory so that
+    changing ``dataset.split.method`` between runs of the same named
+    experiment produces a separate, clearly labeled file instead of silently
+    mixing rows from different evaluation protocols into one CSV. The
+    experiment name stays in the filename to keep different experiment
+    presets that happen to share a method distinguishable.
+    """
     safe_experiment = experiment.replace(" ", "_")
     safe_dataset = dataset.replace(" ", "_")
-    return original_cwd / "outputs" / "results" / safe_dataset / f"results_master_{safe_experiment}.csv"
+    safe_method = method.replace(" ", "_")
+    return (
+        original_cwd
+        / "outputs"
+        / "results"
+        / safe_dataset
+        / safe_method
+        / f"results_master_{safe_experiment}.csv"
+    )
 
 
 def append_master_result(path: Path, row: dict[str, Any]) -> None:

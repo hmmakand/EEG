@@ -19,7 +19,7 @@ if str(SRC) not in sys.path:
 
 from eeg_bci.braindecode_training.trainer import train_from_split_plan
 from eeg_bci.data.datasets import build_dataset
-from eeg_bci.data.splitting import make_leave_one_subject_out_folds
+from eeg_bci.data.splitting import make_leave_one_subject_out_folds, resolved_split_label
 from eeg_bci.models.factory import build_model
 from eeg_bci.tracking.artifacts import prepare_run_dirs, save_dataset_info, save_final_metrics, save_run_metadata
 from eeg_bci.tracking.logging import configure_logging
@@ -139,6 +139,7 @@ def main(cfg: DictConfig) -> None:
                 Path(get_original_cwd()),
                 str(cfg.experiment_name),
                 dataset_label(cfg.dataset),
+                str(cfg.dataset.split.method),
             ),
             {
                 **metrics,
@@ -174,7 +175,7 @@ def main(cfg: DictConfig) -> None:
         dataset_info,
         extra={
             "dataset": dataset_label(cfg.dataset),
-            "split_strategy": str(cfg.dataset.split.strategy),
+            "split_strategy": resolved_split_label(cfg.dataset.split),
         },
     )
     save_run_metadata(

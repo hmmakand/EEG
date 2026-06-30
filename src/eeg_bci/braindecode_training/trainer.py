@@ -21,17 +21,15 @@ from eeg_bci.braindecode_training.evaluation import (
     latest_history_value,
     score_classifier_by_description,
 )
-from eeg_bci.data.splitting import CHRONOLOGICAL_CROSS_VALIDATION_TEST
-from eeg_bci.data.splitting import CHRONOLOGICAL_GRID_SEARCH_TEST
-from eeg_bci.data.splitting import CHRONOLOGICAL_LEAVE_ONE_SUBJECT_OUT
-from eeg_bci.data.splitting import CHRONOLOGICAL_TRAIN_TEST
-from eeg_bci.data.splitting import CHRONOLOGICAL_TRAIN_VALID_TEST
-from eeg_bci.data.splitting import SESSION_LEAVE_ONE_SUBJECT_OUT
-from eeg_bci.data.splitting import SESSION_CROSS_VALIDATION_TEST
-from eeg_bci.data.splitting import SESSION_GRID_SEARCH_TEST
-from eeg_bci.data.splitting import SESSION_TRAIN_TEST
-from eeg_bci.data.splitting import SESSION_TRAIN_VALID_TEST
-from eeg_bci.data.splitting import SplitPlan, split_train_valid
+from eeg_bci.data.splitting import (
+    CROSS_VALIDATION_TEST,
+    GRID_SEARCH_TEST,
+    LOSO,
+    TRAIN_TEST,
+    TRAIN_VALID_TEST,
+    SplitPlan,
+    split_train_valid,
+)
 from eeg_bci.tracking.artifacts import export_history
 from eeg_bci.tracking.metrics import DEFAULT_METRICS, normalize_eval_metrics
 from eeg_bci.tracking.tensorboard import (
@@ -59,15 +57,7 @@ def train_from_split_plan(
     labels = _evaluation_labels(n_outputs)
     _validate_class_names(class_names, labels)
 
-    if split_plan.split_strategy in {
-        SESSION_TRAIN_TEST,
-        SESSION_TRAIN_VALID_TEST,
-        SESSION_LEAVE_ONE_SUBJECT_OUT,
-        CHRONOLOGICAL_LEAVE_ONE_SUBJECT_OUT,
-        CHRONOLOGICAL_TRAIN_TEST,
-        CHRONOLOGICAL_TRAIN_VALID_TEST,
-        "random",
-    }:
+    if split_plan.method in {TRAIN_TEST, TRAIN_VALID_TEST, LOSO}:
         return _train_once(
             model,
             split_plan.train_set,
@@ -84,10 +74,7 @@ def train_from_split_plan(
             class_names=class_names,
         )
 
-    if split_plan.split_strategy in {
-        SESSION_CROSS_VALIDATION_TEST,
-        CHRONOLOGICAL_CROSS_VALIDATION_TEST,
-    }:
+    if split_plan.method == CROSS_VALIDATION_TEST:
         return _train_with_cross_validation(
             model,
             split_plan,
@@ -101,10 +88,7 @@ def train_from_split_plan(
             class_names=class_names,
         )
 
-    if split_plan.split_strategy in {
-        SESSION_GRID_SEARCH_TEST,
-        CHRONOLOGICAL_GRID_SEARCH_TEST,
-    }:
+    if split_plan.method == GRID_SEARCH_TEST:
         return _train_with_grid_search(
             model,
             split_plan,
@@ -118,7 +102,7 @@ def train_from_split_plan(
             class_names=class_names,
         )
 
-    raise ValueError(f"Unsupported split strategy {split_plan.split_strategy}.")
+    raise ValueError(f"Unsupported split method {split_plan.method}.")
 
 
 def train_model(

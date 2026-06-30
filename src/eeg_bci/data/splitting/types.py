@@ -24,6 +24,7 @@ class SplitPlan:
     """Resolved datasets and optional resampler for one split strategy."""
 
     split_strategy: str
+    method: str
     train_pool: Dataset
     train_set: Dataset
     valid_set: Dataset | None
