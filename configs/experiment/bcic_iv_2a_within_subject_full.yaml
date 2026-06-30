@@ -8,7 +8,8 @@ defaults:
 
 dataset:
   split:
-    strategy: session_train_test
+    strategy: session_grid_search_test
 
 training:
-  max_epochs: 2
+  max_epochs: 100
+;
