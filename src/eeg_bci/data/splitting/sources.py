@@ -18,7 +18,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import Dataset, Subset, random_split
 
 from eeg_bci.data.adapters import BraindecodeLikeDataset, TensorDatasetFromBraindecode
-from eeg_bci.data.splitting.config import section, split_lengths
+from eeg_bci.data.splitting.config import resolve_subject_column, split_lengths
 from eeg_bci.data.splitting.description import split_by_session_description
 from eeg_bci.data.splitting.strategies import (
     SOURCE_CHRONOLOGICAL,
@@ -35,9 +35,12 @@ def make_session_split_source(
     """Create the outer train/test source from description session metadata."""
 
     train_source, test_source = split_by_session_description(dataset, split_cfg)
+    subject_column = resolve_subject_column(split_cfg)
+    groups = _safe_group_values(cast(Any, train_source).get_metadata(), subject_column)
     return SplitSource(
         train_pool=TensorDatasetFromBraindecode(train_source),
         test_set=TensorDatasetFromBraindecode(test_source),
+        groups=groups,
     )
 
 
@@ -54,22 +57,28 @@ def make_chronological_split_source(
 
     test_size = float(split_cfg.get("test_size", 0.2))
     stratify = bool(split_cfg.get("stratify", True))
-    subject_column = _chronological_subject_column(split_cfg)
+    subject_column = resolve_subject_column(split_cfg)
     tensor_dataset = TensorDatasetFromBraindecode(dataset)
     train_indices, test_indices = _chronological_split_indices(
         dataset, test_size=test_size, stratify=stratify, subject_column=subject_column
     )
     train_indices = _sort_chronological_indices(dataset, train_indices)
     test_indices = _sort_chronological_indices(dataset, test_indices)
+
+    metadata = cast(Any, dataset).get_metadata()
+    full_groups = _safe_group_values(metadata, subject_column)
+    groups = full_groups[train_indices] if full_groups is not None else None
     return SplitSource(
         train_pool=Subset(tensor_dataset, train_indices.tolist()),
         test_set=Subset(tensor_dataset, test_indices.tolist()),
+        groups=groups,
     )
 
 
-def _chronological_subject_column(split_cfg: DictConfig) -> str:
-    subject_cfg = section(split_cfg, "subject")
-    return str(subject_cfg.get("column", split_cfg.get("subject_column", "subject")))
+def _safe_group_values(metadata: Any, subject_column: str) -> np.ndarray | None:
+    if subject_column not in metadata.columns:
+        return None
+    return metadata[subject_column].to_numpy()
 
 
 def build_random_source(

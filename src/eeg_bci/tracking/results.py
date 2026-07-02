@@ -52,6 +52,52 @@ MASTER_COLUMNS = [
 ]
 
 
+PREFERRED_METRIC_COLUMNS = [
+    "split_strategy",
+    "n_train_windows",
+    "n_valid_windows",
+    "n_test_windows",
+    "train_loss",
+    "train_accuracy",
+    "valid_loss",
+    "valid_accuracy",
+    "cv_accuracy_mean",
+    "cv_accuracy_std",
+    "best_score",
+    "best_score_std",
+    "best_train_score",
+    "best_train_score_std",
+    "best_params",
+    "test_accuracy",
+    "test_balanced_accuracy",
+    "test_cohen_kappa",
+    "test_macro_f1",
+    "test_macro_precision",
+    "test_macro_recall",
+    "test_roc_auc",
+    "checkpoint_path",
+    "history_path",
+]
+
+
+def order_fieldnames(
+    rows: list[dict[str, Any]],
+    *,
+    leading: list[str] | tuple[str, ...] = (),
+) -> list[str]:
+    """Order CSV fieldnames as ``leading`` + known metrics + remaining sorted.
+
+    ``leading`` holds caller-specific grouping columns (e.g. ``subject`` or
+    ``held_out_subject``); the shared metric columns follow in a canonical
+    order, and any extra keys present in the rows are appended alphabetically.
+    Only columns actually present in ``rows`` are emitted.
+    """
+    preferred = [*leading, *PREFERRED_METRIC_COLUMNS]
+    present = {key for row in rows for key in row}
+    ordered = [key for key in preferred if key in present]
+    return ordered + sorted(present.difference(ordered))
+
+
 def master_result_path(
     original_cwd: Path,
     experiment: str,

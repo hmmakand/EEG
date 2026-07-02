@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 import hydra
-import torch
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
@@ -31,7 +30,8 @@ from eeg_bci.tracking.naming import (
     model_label,
     tensorboard_dir,
 )
-from eeg_bci.tracking.results import append_master_result, master_result_path
+from eeg_bci.tracking.results import append_master_result, master_result_path, order_fieldnames
+from eeg_bci.tracking.run_recording import build_master_row, resolve_device
 from eeg_bci.tracking.tensorboard import write_run_text
 from eeg_bci.utils.seed import seed_everything
 
@@ -63,7 +63,7 @@ def main(cfg: DictConfig) -> None:
         tensorboard_dir=tensorboard_dir(cfg, output_dir.name),
     )
 
-    device = _resolve_device(str(cfg.device))
+    device = resolve_device(str(cfg.device))
     dataset, dataset_info = build_dataset(cfg.dataset, cfg.preprocessing)
     validation_cfg = cfg.training.validation
     folds = make_leave_one_subject_out_folds(
@@ -141,26 +141,17 @@ def main(cfg: DictConfig) -> None:
                 dataset_label(cfg.dataset),
                 str(cfg.dataset.split.method),
             ),
-            {
-                **metrics,
-                "run_id": run_id,
-                "run_dir": str(fold_output_dir),
-                "tensorboard_dir": str(tb_dir),
-                "timestamp": output_dir.name,
-                "experiment": str(cfg.experiment_name),
-                "dataset": dataset_label(cfg.dataset),
-                "model": model_label(cfg.model),
-                "held_out_subject": label,
-                "seed": int(cfg.seed),
-                "n_chans": dataset_info.n_chans,
-                "n_outputs": dataset_info.n_outputs,
-                "n_times": dataset_info.n_times,
-                "sfreq": dataset_info.sfreq,
-                "config_path": str(output_dir / ".hydra" / "config.yaml"),
-                "final_metrics_path": str(fold_output_dir / "metrics" / "final_metrics.yaml"),
-                "dataset_info_path": str(fold_output_dir / "metrics" / "dataset_info.yaml"),
-                "status": "success",
-            },
+            build_master_row(
+                cfg,
+                metrics,
+                dataset_info,
+                run_id=run_id,
+                run_dir=fold_output_dir,
+                hydra_output_dir=output_dir,
+                tb_dir=tb_dir,
+                timestamp=output_dir.name,
+                held_out_subject=label,
+            ),
         )
         save_run_metadata(fold_output_dir, cfg=cfg, run_id=run_id, tensorboard_dir=tb_dir, status="success")
         logger.info("held_out_subject=%s: done", held_out)
@@ -200,46 +191,13 @@ def _summarize_results(results: list[dict[str, Any]]) -> dict[str, float]:
     return summarize_scalar_metrics(results)
 
 
-def _result_fieldnames(results: list[dict[str, Any]]) -> list[str]:
-    preferred = [
-        "held_out_subject",
-        "train_subjects",
-        "n_train_windows",
-        "n_valid_windows",
-        "n_test_windows",
-        "split_strategy",
-        "train_loss",
-        "train_accuracy",
-        "valid_loss",
-        "valid_accuracy",
-        "test_accuracy",
-        "test_balanced_accuracy",
-        "test_cohen_kappa",
-        "test_macro_f1",
-        "test_macro_precision",
-        "test_macro_recall",
-        "test_roc_auc",
-        "checkpoint_path",
-        "history_path",
-    ]
-    present = {key for row in results for key in row}
-    ordered = [fieldname for fieldname in preferred if fieldname in present]
-    return ordered + sorted(present.difference(ordered))
-
-
 def _write_results(path: Path, results: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = _result_fieldnames(results)
+    fieldnames = order_fieldnames(results, leading=["held_out_subject", "train_subjects"])
     with path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(results)
-
-
-def _resolve_device(device_name: str) -> torch.device:
-    if device_name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device_name)
 
 
 def _is_loso_experiment() -> bool:

@@ -1,8 +1,9 @@
 # @package _global_
 experiment_name: liu2024_loso
-# Leave-one-subject-out preset: split each subject chronologically, train on
-# non-held-out subjects' chronological training windows, and evaluate on the
-# held-out subject's chronological test windows.
+# Leave-one-subject-out preset (full-data / canonical LOSO): train on ALL
+# windows of every non-held-out subject and evaluate on ALL windows of the
+# held-out subject. The chronological source is not used to subset subjects
+# inside a fold.
 defaults:
   - override /dataset: liu2024
   - override /preprocessing: liu2024

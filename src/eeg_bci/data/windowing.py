@@ -45,12 +45,33 @@ def create_event_windows(dataset, dataset_cfg: DictConfig, preprocessing_cfg: Di
     )
 
 
-def infer_window_info(windows) -> tuple[int, int, int]:
-    """Infer channel count, class count, and time samples from windows."""
+def infer_window_info(windows, *, n_outputs: int | None = None) -> tuple[int, int, int]:
+    """Infer channel count, class count, and time samples from windows.
+
+    ``n_outputs`` should be supplied from ``dataset.mapping`` (see
+    :func:`n_outputs_from_mapping`) so the model head and metric label space
+    stay stable even when a particular subject/fold is missing a class. When it
+    is ``None`` the class count falls back to the observed unique targets.
+    """
 
     sample_x, _, *_ = windows[0]
-    n_outputs = len(set(int(windows[idx][1]) for idx in range(len(windows))))
-    return int(sample_x.shape[0]), n_outputs, int(sample_x.shape[-1])
+    if n_outputs is None:
+        n_outputs = len(set(int(windows[idx][1]) for idx in range(len(windows))))
+    return int(sample_x.shape[0]), int(n_outputs), int(sample_x.shape[-1])
+
+
+def n_outputs_from_mapping(mapping: dict[str, int] | None) -> int | None:
+    """Return the classifier head size implied by a label mapping.
+
+    Returns ``max(target) + 1`` so it matches the ``range(n_outputs)`` label
+    space used everywhere downstream (this assumes the 0-based contiguous
+    targets that :func:`mapping_from_config` already produces). Returns ``None``
+    when no mapping is configured, leaving the count to be inferred from data.
+    """
+
+    if not mapping:
+        return None
+    return int(max(mapping.values())) + 1
 
 
 def seconds_to_samples(value: float | None, sfreq: float) -> int | None:

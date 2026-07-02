@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import numpy as np
 from omegaconf import DictConfig
 from torch.utils.data import ConcatDataset, Dataset
 
-from eeg_bci.data.adapters import BraindecodeLikeDataset
+from eeg_bci.data.adapters import BraindecodeLikeDataset, TensorDatasetFromBraindecode
 from eeg_bci.data.splitting.config import resolved_source_and_method, section
 from eeg_bci.data.splitting.description import (
     description_splits,
@@ -13,7 +16,6 @@ from eeg_bci.data.splitting.description import (
     sort_description_key,
 )
 from eeg_bci.data.splitting.plans import make_loso_plan, split_train_valid
-from eeg_bci.data.splitting.sources import build_split_source
 from eeg_bci.data.splitting.strategies import LOSO
 from eeg_bci.data.splitting.types import CrossSubjectFold
 
@@ -27,7 +29,14 @@ def make_leave_one_subject_out_folds(
     validation_size: float = 0.2,
     validation_shuffle: bool = False,
 ) -> list[CrossSubjectFold]:
-    """Create leave-one-subject-out folds for any registered split source."""
+    """Create leave-one-subject-out folds.
+
+    Each fold trains on *all* windows of the non-held-out subjects and
+    evaluates on *all* windows of the held-out subject (canonical LOSO). The
+    intra-subject split ``source`` (e.g. ``session``/``chronological``) does
+    not subset a subject inside a fold -- it is read only to validate the
+    method and to label the run via ``split_label(source, LOSO)``.
+    """
 
     source, method = resolved_source_and_method(split_cfg)
     if method != LOSO:
@@ -49,8 +58,8 @@ def make_leave_one_subject_out_folds(
             f"column {subject_column}."
         )
 
-    subject_sources = {
-        key: build_split_source(source, sub_dataset, split_cfg, seed=seed)
+    subject_datasets: dict[Any, Dataset] = {
+        key: TensorDatasetFromBraindecode(sub_dataset)
         for key, sub_dataset in by_subject.items()
     }
 
@@ -58,17 +67,27 @@ def make_leave_one_subject_out_folds(
     for held_out_key in subject_keys:
         train_keys = [key for key in subject_keys if key != held_out_key]
         train_set: Dataset = ConcatDataset(
-            [subject_sources[key].train_pool for key in train_keys]
+            [subject_datasets[key] for key in train_keys]
         )
         valid_set: Dataset | None = None
         if validation_enabled:
+            fold_groups = np.concatenate(
+                [
+                    np.full(
+                        len(subject_datasets[key]),
+                        normalize_description_key(key),
+                    )
+                    for key in train_keys
+                ]
+            )
             train_set, valid_set = split_train_valid(
                 train_set,
                 valid_size=validation_size,
                 shuffle=validation_shuffle,
                 seed=seed,
+                groups=fold_groups,
             )
-        test_set = subject_sources[held_out_key].test_set
+        test_set = subject_datasets[held_out_key]
         split_plan = make_loso_plan(train_set, valid_set, test_set, source=source)
         folds.append(
             CrossSubjectFold(

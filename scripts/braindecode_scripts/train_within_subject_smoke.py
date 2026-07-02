@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import hydra
-import torch
 from hydra.core.hydra_config import HydraConfig
 from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
@@ -33,6 +32,7 @@ from eeg_bci.tracking.naming import (
     tensorboard_dir,
 )
 from eeg_bci.tracking.results import append_master_result, master_result_path
+from eeg_bci.tracking.run_recording import build_master_row, resolve_device
 from eeg_bci.tracking.tensorboard import write_run_text
 from eeg_bci.utils.seed import seed_everything
 
@@ -59,7 +59,7 @@ def main(cfg: DictConfig) -> None:
     tb_dir = tensorboard_dir(cfg, output_dir.name, scope)
     save_run_metadata(output_dir, cfg=cfg, run_id=run_id, tensorboard_dir=tb_dir)
 
-    device = _resolve_device(str(cfg.device))
+    device = resolve_device(str(cfg.device))
     split_plan, dataset_info = build_dataset_split(
         cfg.dataset,
         cfg.preprocessing,
@@ -112,35 +112,20 @@ def main(cfg: DictConfig) -> None:
             dataset_label(cfg.dataset),
             str(cfg.dataset.split.method),
         ),
-        {
-            **metrics,
-            "run_id": run_id,
-            "run_dir": str(output_dir),
-            "tensorboard_dir": str(tb_dir),
-            "timestamp": output_dir.name,
-            "experiment": str(cfg.experiment_name),
-            "dataset": dataset_label(cfg.dataset),
-            "model": model_label(cfg.model),
-            "subject": subject_scope(cfg.dataset.subject_ids),
-            "seed": int(cfg.seed),
-            "n_chans": dataset_info.n_chans,
-            "n_outputs": dataset_info.n_outputs,
-            "n_times": dataset_info.n_times,
-            "sfreq": dataset_info.sfreq,
-            "config_path": str(output_dir / ".hydra" / "config.yaml"),
-            "final_metrics_path": str(output_dir / "metrics" / "final_metrics.yaml"),
-            "dataset_info_path": str(output_dir / "metrics" / "dataset_info.yaml"),
-            "status": "success",
-        },
+        build_master_row(
+            cfg,
+            metrics,
+            dataset_info,
+            run_id=run_id,
+            run_dir=output_dir,
+            hydra_output_dir=output_dir,
+            tb_dir=tb_dir,
+            timestamp=output_dir.name,
+            subject=subject_scope(cfg.dataset.subject_ids),
+        ),
     )
     save_run_metadata(output_dir, cfg=cfg, run_id=run_id, tensorboard_dir=tb_dir, status="success")
     logger.info("final_metrics:\n%s", OmegaConf.to_yaml(metrics))
-
-
-def _resolve_device(device_name: str) -> torch.device:
-    if device_name == "auto":
-        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.device(device_name)
 
 
 def _is_within_subject_smoke_experiment() -> bool:

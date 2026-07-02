@@ -31,6 +31,7 @@ from eeg_bci.data.splitting.plans import (
 )
 from eeg_bci.data.splitting.resampling import (
     HoldoutSplit,
+    PerGroupKFold,
     make_chronological_resampler,
     make_resampler,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "HoldoutSplit",
     "LOSO",
     "METHODS",
+    "PerGroupKFold",
     "Resampler",
     "SOURCE_BUILDERS",
     "SOURCE_CHRONOLOGICAL",

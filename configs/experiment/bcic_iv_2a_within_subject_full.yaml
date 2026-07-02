@@ -11,7 +11,7 @@ dataset:
     method: grid_search_test
 
 training:
-  max_epochs: 5
+  max_epochs: 3
 
 # param_grid:
 #     optimizer__lr: 0.000625

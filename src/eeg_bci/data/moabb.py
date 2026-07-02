@@ -21,7 +21,12 @@ from eeg_bci.data.paths import resolve_data_dir
 from eeg_bci.data.preprocessing import apply_preprocessing
 from eeg_bci.data.adapters import BraindecodeLikeDataset
 from eeg_bci.data.types import DatasetInfo
-from eeg_bci.data.windowing import create_event_windows, infer_window_info
+from eeg_bci.data.windowing import (
+    create_event_windows,
+    infer_window_info,
+    mapping_from_config,
+    n_outputs_from_mapping,
+)
 
 
 def build_moabb_dataset(
@@ -47,7 +52,10 @@ def build_moabb_dataset(
     apply_preprocessing(dataset, preprocessing_cfg)
     sfreq = float(dataset.datasets[0].raw.info["sfreq"])
     windows = create_event_windows(dataset, dataset_cfg, preprocessing_cfg)
-    n_chans, n_outputs, n_times = infer_window_info(windows)
+    mapping = mapping_from_config(dataset_cfg.get("mapping"))
+    n_chans, n_outputs, n_times = infer_window_info(
+        windows, n_outputs=n_outputs_from_mapping(mapping)
+    )
 
     info = DatasetInfo(
         n_chans=n_chans,

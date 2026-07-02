@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias
 
+import numpy as np
 from sklearn.model_selection import BaseCrossValidator, KFold
 from torch.utils.data import Dataset
 
@@ -17,6 +18,12 @@ class SplitSource:
 
     train_pool: Dataset
     test_set: Dataset
+    groups: np.ndarray | None = None
+    """Per-row subject id for ``train_pool``, in the same row order. ``None``
+    for sources with no subject concept (e.g. synthetic/random). Used to keep
+    validation splits and resampling folds proportionally representative of
+    every pooled subject instead of taking a positional slice that can land
+    entirely within one subject."""
 
 
 @dataclass(frozen=True)

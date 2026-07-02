@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from typing import cast
 
+import numpy as np
 import torch
 from omegaconf import DictConfig
 from torch.utils.data import Dataset, Subset, random_split
 
 from eeg_bci.data.adapters import BraindecodeLikeDataset
 from eeg_bci.data.splitting.config import (
+    grouped_split_indices,
     resolved_source_and_method,
     split_lengths,
     validation_shuffle,
@@ -57,6 +59,7 @@ def make_protocol_split(
         split_cfg,
         seed=seed,
         resampler_use_top_level_defaults=(source != SOURCE_CHRONOLOGICAL),
+        groups=split_source.groups,
     )
 
 
@@ -69,8 +72,15 @@ def make_split_plan(
     *,
     seed: int,
     resampler_use_top_level_defaults: bool = True,
+    groups: np.ndarray | None = None,
 ) -> SplitPlan:
-    """Create a SplitPlan once the outer train/test source is known."""
+    """Create a SplitPlan once the outer train/test source is known.
+
+    ``groups`` is the per-row subject id for ``train_pool`` (see
+    ``SplitSource.groups``). When provided, validation splits and resampling
+    folds are computed proportionally per subject instead of as a flat
+    positional/shuffled cut across the whole pooled ``train_pool``.
+    """
 
     label = split_label(source, method)
     if method == TRAIN_TEST:
@@ -83,6 +93,7 @@ def make_split_plan(
             test_set,
             split_cfg,
             seed=seed,
+            groups=groups,
         )
 
     if method == CROSS_VALIDATION_TEST:
@@ -94,6 +105,7 @@ def make_split_plan(
             split_cfg,
             seed=seed,
             resampler_use_top_level_defaults=resampler_use_top_level_defaults,
+            groups=groups,
         )
 
     if method == GRID_SEARCH_TEST:
@@ -104,6 +116,7 @@ def make_split_plan(
             split_cfg,
             seed=seed,
             resampler_use_top_level_defaults=resampler_use_top_level_defaults,
+            groups=groups,
         )
 
     raise ValueError(f"Unsupported split methodology {method}.")
@@ -132,12 +145,14 @@ def make_train_valid_test_plan(
     split_cfg: DictConfig,
     *,
     seed: int,
+    groups: np.ndarray | None = None,
 ) -> SplitPlan:
     train_set, valid_set = split_train_valid(
         train_pool,
         valid_size=validation_size(split_cfg),
         shuffle=validation_shuffle(split_cfg),
         seed=seed,
+        groups=groups,
     )
     return SplitPlan(
         split_strategy=label,
@@ -159,11 +174,13 @@ def make_resampled_plan(
     *,
     seed: int,
     resampler_use_top_level_defaults: bool = True,
+    groups: np.ndarray | None = None,
 ) -> SplitPlan:
     resampler = make_resampler(
         split_cfg,
         seed=seed,
         use_top_level_defaults=resampler_use_top_level_defaults,
+        groups=groups,
     )
     return SplitPlan(
         split_strategy=label,
@@ -184,6 +201,7 @@ def make_grid_search_plan(
     *,
     seed: int,
     resampler_use_top_level_defaults: bool = True,
+    groups: np.ndarray | None = None,
 ) -> SplitPlan:
     return make_resampled_plan(
         label,
@@ -193,6 +211,7 @@ def make_grid_search_plan(
         split_cfg,
         seed=seed,
         resampler_use_top_level_defaults=resampler_use_top_level_defaults,
+        groups=groups,
     )
 
 
@@ -220,11 +239,30 @@ def split_train_valid(
     valid_size: float,
     seed: int,
     shuffle: bool,
+    groups: np.ndarray | None = None,
 ) -> tuple[Dataset, Dataset]:
-    """Split a training set into inner-training and validation subsets."""
+    """Split a training set into inner-training and validation subsets.
+
+    When ``groups`` is given (e.g. a per-row subject id), the split is
+    computed independently within each group and unioned, so every group is
+    proportionally represented in both the inner-training and validation
+    sets instead of a flat cut that can land entirely within one group when
+    rows are ordered group-by-group (as pooled multi-subject data is).
+    """
 
     sized_train_set = cast(SizedDataset, train_set)
-    train_len, valid_len = split_lengths(len(sized_train_set), holdout_size=valid_size)
+    n = len(sized_train_set)
+
+    if groups is not None:
+        inner_train_indices, valid_indices = grouped_split_indices(
+            n, groups, holdout_size=valid_size, shuffle=shuffle, seed=seed
+        )
+        return (
+            Subset(train_set, inner_train_indices.tolist()),
+            Subset(train_set, valid_indices.tolist()),
+        )
+
+    train_len, valid_len = split_lengths(n, holdout_size=valid_size)
 
     if shuffle:
         generator = torch.Generator().manual_seed(seed)
@@ -235,7 +273,7 @@ def split_train_valid(
         )
         return inner_train_set, valid_set
 
-    indices = list(range(len(sized_train_set)))
+    indices = list(range(n))
     inner_train_indices = indices[:train_len]
     valid_indices = indices[train_len:]
     return Subset(train_set, inner_train_indices), Subset(train_set, valid_indices)
