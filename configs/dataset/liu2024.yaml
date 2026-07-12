@@ -62,7 +62,7 @@ split:
     valid_size: 0.2
     shuffle: false
   resampling:
-    method: kfold
+    method: holdout # kfold or holdout
     n_splits: 5
     shuffle: false
 mapping:

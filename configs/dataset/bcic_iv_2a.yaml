@@ -14,7 +14,7 @@ subject_ids:
   - 9
 split:
   source: session
-  method: train_valid_test
+  method: train_test
   session:
     column: session
     train_key: 0train
@@ -23,8 +23,9 @@ split:
     valid_size: 0.2
     shuffle: false
   resampling:
-    method: kfold # kfold or holdout
+    method: holdout # kfold or holdout
     n_splits: 5
+    valid_size: 0.2
     shuffle: false
 mapping:
   left_hand: 0
