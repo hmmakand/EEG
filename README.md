@@ -18,6 +18,32 @@ python scripts/braindecode_scripts/train_subject_pooled.py experiment=bcic_iv_2a
 python scripts/braindecode_scripts/train_loso.py experiment=bcic_iv_2a_loso
 ```
 
+## Running multiple models / seeds in one command (Hydra multirun)
+
+Model and seed sweeps are a **CLI thing**, not a config-file thing. Keep the
+experiment yaml single-model (`override /model: eegnet`) and layer the sweep on
+top with `-m` (multirun) plus a comma-list. Do NOT put the comma-list in the
+yaml `defaults:` list — that selects one option and will error on a list.
+
+```bash
+# Same experiment, run once per model (sequential)
+python scripts/braindecode_scripts/train_within_subject_smoke.py -m \
+  experiment=bcic_iv_2a_within_subject_smoke model=eegnet,shallowfbcspnet,deep4net
+
+# Sweep two axes at once -> every combination (here 3 models x 3 seeds = 9 runs)
+python scripts/braindecode_scripts/train_within_subjects.py -m \
+  experiment=bcic_iv_2a_within_subject_full model=eegnet,deep4net,atcnet seed=1,2,3
+```
+
+Notes:
+- `model=a,b,c` (an override) sweeps; `override /model: a` (a defaults entry) does not.
+- `train_within_subjects.py` and `train_loso.py` already loop subjects/folds
+  internally, so a model sweep multiplies cleanly on top.
+- The master CSV and TensorBoard still aggregate correctly under `outputs/`
+  (their paths come from config, not Hydra's output dir). Only Hydra's per-run
+  artifact folder (`model.pt`, `logs`) currently falls back to `multirun/`
+  unless a `hydra.sweep.dir` is added to `configs/config.yaml`.
+
 ## Experiment tracking
 
 Runs are organized for manuscript-friendly comparison across experiments, datasets, models, subjects/folds, and seeds.

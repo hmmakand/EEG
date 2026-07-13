@@ -14,3 +14,10 @@ output_dir: ${hydra:runtime.output_dir}
 hydra:
   run:
     dir: outputs/runs/${dataset.label}/${experiment_name}/${dataset.split.method}/${model.label}/${now:%Y-%m-%d_%H-%M-%S}__seed${seed}
+  # Multirun (-m sweeps) lands in the SAME tree as single runs. Every axis that
+  # can vary per job (dataset/experiment/method/model/seed) lives in `subdir`
+  # so it is resolved per job, not once at launch -- swept jobs get meaningful
+  # `{model}/{timestamp}__seed{seed}` folders instead of opaque 0/1/2 numbers.
+  sweep:
+    dir: outputs/runs
+    subdir: ${dataset.label}/${experiment_name}/${dataset.split.method}/${model.label}/${now:%Y-%m-%d_%H-%M-%S}__seed${seed}
