@@ -9,18 +9,16 @@ defaults:
   - override /dataset: bcic_iv_2a
   - override /preprocessing: bcic_iv_2a
   - override /training: default
+  - override /model: eegnet
 
 dataset:
   split:
     method: leave_one_subject_out
-    session:
-      column: session
-      train_key: 0train
-      test_key: 1test
-    subject:
-      column: subject
 
 training:
   max_epochs: 2
+  batch_size: 16
+  learning_rate: 0.000625
+  weight_decay: 0.0
   validation:
     enabled: false # if true will creare (train+val) & test

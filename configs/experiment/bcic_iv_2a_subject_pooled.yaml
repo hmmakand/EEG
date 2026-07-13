@@ -6,10 +6,23 @@ defaults:
   - override /dataset: bcic_iv_2a
   - override /preprocessing: bcic_iv_2a
   - override /training: default
+  - override /model: eegnet
 
 dataset:
   split:
     method: train_test
+    # train_test, train_valid_test, cross_validation_test, grid_search_test
+    validation:
+      valid_size: 0.2
+      shuffle: false
+    resampling:
+      method: holdout # kfold or holdout
+      n_splits: 5
+      valid_size: 0.2
+      shuffle: false
 
 training:
   max_epochs: 5
+  batch_size: 16
+  learning_rate: 0.000625
+  weight_decay: 0.0

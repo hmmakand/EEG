@@ -8,14 +8,16 @@ defaults:
   - override /dataset: liu2024
   - override /preprocessing: liu2024
   - override /training: default
+  - override /model: eegnet
 
 dataset:
   split:
     method: leave_one_subject_out
-    subject:
-      column: subject
 
 training:
   max_epochs: 2
+  batch_size: 16
+  learning_rate: 0.000625
+  weight_decay: 0.0
   validation:
-    enabled: true # if true will creare (train+val) & test
+    enabled: false # if true will creare (train+val) & test
