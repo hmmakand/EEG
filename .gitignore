@@ -102,6 +102,7 @@ events.out.tfevents.*
 .cache/
 .tox/
 .nox/
+temp/
 
 # Local editor settings
 .vscode/
