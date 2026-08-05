@@ -35,6 +35,7 @@ ENV/
 *.pem
 
 # Large datasets
+data/figshare/
 
 # MOABB/MNE dataset cache
 data/moabb/
