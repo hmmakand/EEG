@@ -3,29 +3,10 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "braindecode-eeg-dev"
+name = "eeg"
 version = "0.1.0"
-description = "EEG development workspace with Braindecode"
-requires-python = ">=3.11"
-dependencies = [
-    "braindecode>=1.5",
-    "hydra-core>=1.3",
-    "moabb>=1.5",
-    "mne>=1.12",
-    "numpy>=2.0",
-    "pandas>=3.0",
-    "scikit-learn>=1.7",
-    "matplotlib>=3.10",
-    "tensorboard>=2.20",
-    "torch>=2.0",
-]
-
-[project.optional-dependencies]
-dev = [
-    "ipykernel",
-    "jupyterlab",
-    "pytest",
-]
+description = "EEG-BCI"
+requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
 where = ["src"]
