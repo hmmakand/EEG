@@ -33,3 +33,7 @@
 # python -m pip install -e . --no-deps
 # python -m pip install lightning
 # pip install -U pytest
+
+# Persistent homology for manuscript-candidate graph features.
+ripser==0.6.15
+mypy==2.3.1

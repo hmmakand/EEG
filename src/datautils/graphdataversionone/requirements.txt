@@ -1,0 +1,7 @@
+# Numerical versions used for this dataset; PyTorch/PyG are optional for as_pyg=True.
+numpy==2.4.6
+scipy==1.17.1
+pandas==3.0.5
+mne==1.12.1
+mne-connectivity==0.9.0
+threadpoolctl==3.6.0

@@ -27,7 +27,8 @@ else:
 
 
 ALL_SUBJECTS = tuple(range(1, 51))
-DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "Preprocessed-MNE-liu2024-data"
+# DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "Preprocessed-MNE-liu2024-data"
+DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "Preprocessed-Gamma-31-40-MNE-liu2024-data"
 EXPECTED_TRIALS_PER_SUBJECT = 40
 
 
