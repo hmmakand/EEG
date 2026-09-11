@@ -9,6 +9,8 @@ from typing import Literal
 
 from src.ourexperimentversionfour.data.combinations import COMBINATIONS, DEFAULT_COMBINATION
 
+from .engine import OptimizerName
+
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
 SeedStrategy = Literal["shared", "per_fold"]
@@ -36,6 +38,10 @@ class TrainingConfig:
     not tuned to any particular combination."""
     weight_decay: float = 5e-4
     """Standard GCN weight decay (Kipf & Welling 2017)."""
+    optimizer: OptimizerName = "adamw"
+    """Which optimizer to build (see ``engine.build_optimizer``)."""
+    momentum: float = 0.9
+    """SGD momentum; ignored when ``optimizer`` is ``"adamw"``."""
     patience: int | None = 10
     """Early-stopping patience on validation loss; ``None`` disables early
     stopping entirely and always runs the full ``epochs`` budget."""
@@ -72,6 +78,10 @@ class TrainingConfig:
             raise ValueError("learning_rate must be finite and positive")
         if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
             raise ValueError("weight_decay must be finite and non-negative")
+        if self.optimizer not in ("adamw", "adam", "sgd"):
+            raise ValueError("optimizer must be 'adamw', 'adam', or 'sgd'")
+        if not math.isfinite(self.momentum) or not 0 <= self.momentum < 1:
+            raise ValueError("momentum must be finite and in the interval [0, 1)")
         if self.patience is not None and self.patience <= 0:
             raise ValueError("patience must be positive or None")
         if (
@@ -90,6 +100,85 @@ class TrainingConfig:
             )
         if self.validation_subjects <= 0:
             raise ValueError("validation_subjects must be positive")
+        if self.num_workers < 0:
+            raise ValueError("num_workers cannot be negative")
+        if not 0 <= self.seed <= 2**32 - 1:
+            raise ValueError("seed must be in the interval [0, 2**32 - 1]")
+        if self.device not in (None, "cpu", "cuda"):
+            raise ValueError("device must be None, 'cpu', or 'cuda'")
+
+
+@dataclass(frozen=True)
+class WithinSubjectConfig:
+    """Hyperparameters and runtime options for the within-subject diagnostic.
+
+    Sibling of :class:`TrainingConfig`, trimmed to what applies here: no
+    ``patience``/``minimum_improvement`` (no early-stopping validation split
+    -- see ``WITHIN_SUBJECT_PLAN.md``), no ``validation_subjects`` (folds are
+    built from one subject's own trials, not cross-subject groups), and no
+    ``seed_strategy`` (every fold shares one seed; there is no per-test-
+    subject notion here). Adds ``folds`` (within-subject k-fold count) and
+    ``repeats`` (re-run the k-fold split with a different seed and
+    aggregate, since 32-40 trials per fold is a small-sample regime).
+    """
+
+    combination: str = DEFAULT_COMBINATION
+    run_name: str | None = None
+    overwrite: bool = False
+    epochs: int = 50
+    batch_size: int = 32
+    learning_rate: float = 0.01
+    weight_decay: float = 5e-4
+    optimizer: OptimizerName = "adamw"
+    """Which optimizer to build (see ``engine.build_optimizer``)."""
+    momentum: float = 0.9
+    """SGD momentum; ignored when ``optimizer`` is ``"adamw"``."""
+    gradient_clip_norm: float | None = 1.0
+    folds: int = 5
+    repeats: int = 1
+    num_workers: int = 0
+    seed: int = 42
+    device: str | None = None
+    output_dir: Path = DEFAULT_OUTPUT_DIR
+    save_outputs: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "output_dir", Path(self.output_dir).expanduser().resolve()
+        )
+        if self.combination not in COMBINATIONS:
+            raise ValueError(
+                f"Unknown combination {self.combination!r}; choose one of "
+                f"{sorted(COMBINATIONS)}"
+            )
+        if self.run_name is not None:
+            if not self.run_name or self.run_name in {".", ".."}:
+                raise ValueError("run_name must be a non-empty directory name")
+            if Path(self.run_name).name != self.run_name:
+                raise ValueError("run_name cannot contain path separators")
+        if self.epochs <= 0:
+            raise ValueError("epochs must be positive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be finite and non-negative")
+        if self.optimizer not in ("adamw", "adam", "sgd"):
+            raise ValueError("optimizer must be 'adamw', 'adam', or 'sgd'")
+        if not math.isfinite(self.momentum) or not 0 <= self.momentum < 1:
+            raise ValueError("momentum must be finite and in the interval [0, 1)")
+        if self.gradient_clip_norm is not None and (
+            not math.isfinite(self.gradient_clip_norm)
+            or self.gradient_clip_norm <= 0
+        ):
+            raise ValueError(
+                "gradient_clip_norm must be finite and positive or None"
+            )
+        if self.folds < 2:
+            raise ValueError("folds must be at least 2")
+        if self.repeats <= 0:
+            raise ValueError("repeats must be positive")
         if self.num_workers < 0:
             raise ValueError("num_workers cannot be negative")
         if not 0 <= self.seed <= 2**32 - 1:

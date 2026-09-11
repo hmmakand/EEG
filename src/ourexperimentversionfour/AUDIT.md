@@ -189,3 +189,13 @@ data (they are fixed choices), and normalization is fit per-subject rather
 than strictly on the training portion (a deliberate, documented choice, not
 an oversight). Closing that is new engineering work -- happy to scope it
 next if useful.
+
+Separately, a **within-subject classification diagnostic**
+(`training/within_subject.py` / `within_subject_cli.py`) now exists
+alongside this pipeline -- see `WITHIN_SUBJECT_PLAN.md` and the README's
+"Within-subject classification (diagnostic)" section. It trains/evaluates on
+one subject's own trials only, with no cross-subject generalization
+involved, to isolate whether the LOSO chance-level result (above) is a
+features/graph problem or specifically a cross-subject-generalization one.
+This is a diagnostic tool, not a protocol-compliance item, so no table rows
+above change.

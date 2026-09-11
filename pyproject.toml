@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "eeg"
+name = "eeg-bci-benchmark"
 version = "0.1.0"
-description = "EEG-BCI"
+description = "EEG-BCI benchmark for motor imagery classification"
 requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]

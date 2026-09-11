@@ -20,9 +20,11 @@ from src.ourexperimentversionfour.data.validation import (
     NODE_FEATURE_NAMES,
 )
 from src.ourexperimentversionfour.data.csd_alpha_wpli import (
+    NODE_VARIANT,
     GraphDataLoaderConfig,
     create_loso_dataloaders,
     create_loso_splits,
+    fit_feature_normalization,
     load_dataset,
     validate_dataset,
 )
@@ -203,6 +205,76 @@ class CsdAlphaWpliLosoDataLoaderTests(unittest.TestCase):
                 dataset_validated=True,
             )
         validate.assert_not_called()
+
+
+class FitFeatureNormalizationTests(unittest.TestCase):
+    dataset: SavedDataset
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dataset = load_dataset()
+
+    def _subject_ids(self) -> np.ndarray:
+        return np.asarray(
+            [sample["subject"] for sample in self.dataset.samples], dtype=np.int64
+        )
+
+    def test_graph_indices_restricts_returned_subjects(self) -> None:
+        subject_ids = self._subject_ids()
+        two_subject_indices = np.flatnonzero(np.isin(subject_ids, (1, 2)))
+        normalization = fit_feature_normalization(
+            self.dataset, graph_indices=two_subject_indices
+        )
+        self.assertEqual(set(normalization.mean_by_subject), {1, 2})
+        self.assertEqual(set(normalization.standard_deviation_by_subject), {1, 2})
+
+    def test_graph_indices_scoped_stats_match_manual_computation(self) -> None:
+        # Mimic a within-subject fold: only a subset of one subject's own
+        # trials (e.g. a train split with a held-out evaluation fold
+        # excluded), not that subject's every trial.
+        subject_ids = self._subject_ids()
+        subject_indices = np.flatnonzero(subject_ids == 3)
+        train_only_indices = subject_indices[:32]  # exclude the other 8 (eval fold)
+
+        normalization = fit_feature_normalization(
+            self.dataset, graph_indices=train_only_indices
+        )
+        raw = np.asarray(
+            self.dataset.nodes[NODE_VARIANT][train_only_indices], dtype=np.float64
+        )
+        expected_mean = raw.mean(axis=(0, 1))
+        expected_standard_deviation = raw.std(axis=(0, 1))
+        np.testing.assert_allclose(
+            normalization.mean_by_subject[3].numpy(), expected_mean, rtol=1e-6
+        )
+        np.testing.assert_allclose(
+            normalization.standard_deviation_by_subject[3].numpy(),
+            expected_standard_deviation,
+            rtol=1e-6,
+        )
+
+        # And it must differ from fitting on that subject's full 40 trials --
+        # otherwise the scoping wouldn't be doing anything.
+        full_normalization = fit_feature_normalization(self.dataset)
+        self.assertFalse(
+            np.allclose(
+                normalization.mean_by_subject[3].numpy(),
+                full_normalization.mean_by_subject[3].numpy(),
+            )
+        )
+
+    def test_omitting_graph_indices_is_unchanged(self) -> None:
+        subject_ids = self._subject_ids()
+        normalization = fit_feature_normalization(self.dataset)
+        raw = np.asarray(
+            self.dataset.nodes[NODE_VARIANT][subject_ids == 1], dtype=np.float64
+        )
+        np.testing.assert_allclose(
+            normalization.mean_by_subject[1].numpy(),
+            raw.mean(axis=(0, 1)),
+            rtol=1e-6,
+        )
+        self.assertEqual(len(normalization.mean_by_subject), 50)
 
 
 if __name__ == "__main__":

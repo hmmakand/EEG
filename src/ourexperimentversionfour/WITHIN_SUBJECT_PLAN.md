@@ -1,304 +1,240 @@
-# Within-subject classification (diagnostic sanity check)
+# Is the within-subject split a standard, pure within-subject protocol?
 
-Status: **planned, not yet implemented** -- saved for review before execution.
+Status: **verified against the field-standard reference implementation, and
+the one deviation found (normalization scope) has since been fixed** -- see
+the "RESOLVED" note below. This
+file previously held the implementation plan for the within-subject
+diagnostic (now built -- see `training/within_subject.py`,
+`training/within_subject_cli.py`, `data/within_subject_split.py`). It is
+repurposed here (temporary/scratch file, safe to overwrite) to answer a
+follow-up question raised during review: since this diagnostic is meant to
+double as a **verification signal for the dataset-generation pipeline**, is
+its split actually a standard, uncompromised within-subject protocol, or
+does having "folds" mean it's secretly doing something else?
 
-## Context
+## Short answer
 
-The nested-CV LOSO pipeline (`training/loso.py`, `training/search_train.py`)
-is complete and audited (`AUDIT.md`), but every run -- fixed hyperparameters
-or searched -- sits at chance level (~50% balanced accuracy). Digging into
-the hyperparameter-search results (subjects 1-8 of `csd_search_run_25`)
-showed the 12-candidate grid's best-vs-worst spread is only ~1-3 points of
-balanced accuracy, no candidate wins consistently, and the searched
-hyperparameters don't even beat the plain default on held-out test -- i.e.
-hyperparameter tuning has nothing to find, which points at something
-upstream of optimization (features, graph, or genuine task difficulty)
-rather than undertuned training.
+**Yes, it is a standard within-subject protocol**, and not an invented one --
+it matches MOABB's own canonical `WithinSessionEvaluation` almost exactly
+(MOABB is the toolkit this project's Liu2024 dataset is built from). There is
+exactly one documented, low-risk deviation from a maximally strict protocol
+(normalization scope), called out below rather than left implicit.
 
-The agreed next step is a **within-subject classification** experiment:
-train and evaluate on one subject's own trials only, with no cross-subject
-generalization involved at all. This isolates two separate questions the
-LOSO number conflates:
+## "Within-subject" and "k-fold" answer two different questions
 
-1. **Can the model fit this data at all?** (an implicit "overfit a small
-   set" check -- each within-subject fold trains on only ~32 trials, and the
-   saved per-epoch training curve will show directly whether the model can
-   drive training loss down on that little data.)
-2. **Is there any decodable signal in this feature/graph representation for
-   a single subject**, decoupled from the (much harder) cross-subject
-   generalization problem that LOSO also has to solve?
+These get conflated, which is presumably where the "why does within-subject
+have folds?" question comes from:
 
-If within-subject accuracy also sits at chance, the problem is the
-features/graph, not cross-subject generalization. If it clears chance
-(classic CSP+LDA motor-imagery baselines land around 65-80% within-subject),
-the representation does carry signal and the LOSO bottleneck is
-specifically about generalizing it across subjects.
+- **Within-subject** is a statement about *data scope*: no other subject's
+  trials ever enter this subject's training set or evaluation set. This is
+  the property that makes it "pure," and it is fully intact here -- enforced
+  by construction and unit-tested (`data/test_within_subject_split.py`):
+  every trial in every fold belongs to the one target subject, train and
+  evaluation indices are disjoint per fold, and every one of that subject's
+  trials appears in exactly one fold's evaluation set.
+- **k-fold** is a statement about *evaluation protocol*: how you turn one
+  subject's limited trials into a performance estimate. It is not in tension
+  with "within-subject" -- it is simply cross-validation run *inside* the
+  boundary that within-subject already establishes.
 
-This plan is for a **diagnostic tool**, not a replacement for the LOSO
-pipeline -- it lives alongside `loso.py`/`hyperparameter_search.py` and
-reuses their building blocks rather than duplicating the model/engine layer.
+## Why k-fold specifically, not a single train/test split
 
-## Constraints that shape the design
+Checked directly against this project's own data:
 
-- **Only 40 trials per subject** (20/20 class-balanced, confirmed via
-  `validate_dataset`'s `subject_counts == 40` check in both combination
-  modules). A 5-fold stratified split gives 32 train / 8 eval per fold (4/4
-  class balance in the eval fold) -- there isn't enough data left over to
-  carve out a *third* split for early-stopping without shrinking training
-  data further.
-- **No early stopping, fixed epoch budget instead.** Rather than eating into
-  the tiny training set for a validation split, each fold trains for a fixed
-  `epochs` budget and checkpoints on **best training loss** (zero-leakage --
-  it never touches the eval fold, unlike using eval-loss to pick a
-  checkpoint). This mirrors the existing `best_validation_loss` checkpoint
-  pattern in `train_loso_fold` (`training/loso.py`), just substituting
-  training loss since there is no held-out validation split here.
-- **Normalization** reuses the existing per-subject `fit_feature_normalization`
-  unchanged (mean/std from that subject's *own* trials, including whichever
-  fold is held out this run). This is the same scope already documented and
-  accepted in `AUDIT.md` item 3 for the main pipeline -- flagged again in the
-  new README section so results aren't misread as leak-free by a stricter
-  standard than the rest of the package uses. Low risk here specifically
-  because it touches no labels and both classes are represented in the
-  normalization stats.
-- **`repeats` for robustness.** 32-40 trials is a small-sample regime, so a
-  single 5-fold split is a noisy estimate. Support an optional `repeats`
-  parameter (default 1) that reruns the k-fold split with a different seed
-  and aggregates -- cheap to add since it's just re-invoking the same
-  fold-construction + training loop.
-
-## Approach
-
-### 1. `data/loso_split.py` -- new split constructor
-
-Add `WithinSubjectFold` (`train_graph_indices`, `evaluation_graph_indices`,
-`subject_id`, `fold`) and:
-
-```python
-def create_within_subject_folds(
-    subject_ids: np.ndarray,
-    labels: np.ndarray,
-    target_subject: int,
-    *,
-    k: int = 5,
-    seed: int = 42,
-) -> tuple[WithinSubjectFold, ...]:
+```
+sample = {'subject': 1, 'trial_index': 0, ..., 'source_file':
+  '.../sub-01/eeg/sub-01_task-motor-imagery_eeg.edf', ...}
 ```
 
-Uses `sklearn.model_selection.StratifiedKFold(n_splits=k, shuffle=True,
-random_state=seed)` (new import; `GroupKFold` is already used the same way
-for `create_inner_cv_folds`) over `target_subject`'s own trial indices only,
-stratified by `labels` so every fold keeps the 50/50 class balance. Add
-`_validate_within_subject_folds` mirroring `_validate_inner_folds`'s
-philosophy: every one of the subject's trials appears in exactly one fold's
-evaluation set, train/evaluation disjoint per fold, and no other subject's
-indices appear anywhere.
+There is no `session` field, and every trial for a subject maps to the same
+single `source_file` -- Liu2024, as loaded here, is **one session per
+subject, 40 trials total** (20/20 class-balanced). That rules out the
+"cleanest" alternative (train on one session, test on another, as e.g. BCI
+Competition IV-2a does across its two recorded sessions) -- there is only one
+session to split.
 
-Field name is deliberately `evaluation_graph_indices`, not `validation_...`
--- there is no early-stopping validation split in this design (see
-Constraints), so reusing "validation" would misleadingly imply one exists
-and risk confusion with the LOSO pipeline's early-stopping validation role.
+With only 40 trials and no second session, a single 80/20 split would (a)
+throw away most of the subject's data for either training or evaluation and
+(b) yield exactly one noisy point estimate per subject. Stratified k-fold CV
+is the field-standard way around this: every trial serves as both training
+data (in the folds where it isn't held out) and evaluation data (in the one
+fold where it is), the class balance is preserved in every fold via
+stratification, and the estimate is far less dependent on the luck of one
+particular split.
 
-### 2. Combination modules -- refactor + one new function each
+## Confirmed against the actual reference implementation, not just literature
 
-`without_csd_alpha_wpli.py` and `csd_alpha_wpli.py` both already have
-`create_group_dataloaders`, which does: resolve subject IDs to graph
-indices, fit normalization, build train/validation loaders via the
-existing `_make_loader`. Factor the index-to-loaders tail out into a small
-shared helper each module already has all the pieces for:
-
-```python
-def _create_indexed_dataloaders(
-    dataset, train_graph_indices, evaluation_graph_indices, config,
-    *, dataset_validated=False,
-) -> tuple[DataLoader, DataLoader, FeatureNormalization]:
-    if not dataset_validated:
-        validate_dataset(dataset)
-    band_index = alpha_band_index(dataset)
-    normalization = fit_feature_normalization(dataset, epsilon=config.normalization_epsilon)
-    train_loader = _make_loader(dataset, train_graph_indices, normalization, config, band_index=band_index, shuffle=True)
-    evaluation_loader = _make_loader(dataset, evaluation_graph_indices, normalization, config, band_index=band_index, shuffle=False)
-    return train_loader, evaluation_loader, normalization
-```
-
-`create_group_dataloaders` becomes a thin wrapper (`_graph_indices_for_subjects`
-on both subject-ID tuples, then delegate) -- same public signature and
-behavior, so `hyperparameter_search.py` and its tests are unaffected. Add
-the new, genuinely different-shaped public function:
+Rather than relying on a general impression of "this is common practice," I
+checked the MOABB package actually installed in this environment
+(`moabb==1.5.0`, `pip show moabb`), since it's the toolkit this project's own
+Liu2024 dataset is derived from
+(`src/datautils/graphdataversionone`). MOABB's own canonical within-subject
+evaluation is `moabb.evaluations.WithinSessionEvaluation`, whose splitter is:
 
 ```python
-def create_within_subject_dataloaders(
-    *, dataset, train_graph_indices, evaluation_graph_indices, config,
-    dataset_validated=False,
-) -> tuple[DataLoader, DataLoader, FeatureNormalization]:
-    return _create_indexed_dataloaders(dataset, train_graph_indices, evaluation_graph_indices, config, dataset_validated=dataset_validated)
+# moabb/evaluations/evaluations.py, WithinSessionEvaluation._create_splitter
+WithinSessionSplitter(
+    n_folds=5,
+    shuffle=True,
+    random_state=self.random_state,
+    cv_class=StratifiedKFold,
+)
 ```
 
-which takes raw graph indices directly (a within-subject fold has no
-subject-ID tuple to resolve -- it's already one subject's trial indices).
+`WithinSessionSplitter.split()` groups by `(subject, session)` and, within
+each group, runs `StratifiedKFold(n_splits=5, shuffle=True,
+random_state=...)` -- i.e. exactly stratified, shuffled 5-fold CV over one
+subject's own trials in one session. Since Liu2024 here has exactly one
+session per subject, MOABB's own standard protocol for this dataset
+collapses to precisely what `create_within_subject_folds` already does:
 
-Register it on `Combination` in `combinations.py` (new
-`create_within_subject_dataloaders` field, filled for both entries),
-matching the existing registry pattern.
+| | MOABB `WithinSessionSplitter` (default) | This project's `create_within_subject_folds` |
+|---|---|---|
+| Fold count | `n_folds=5` | `k=5` (default) |
+| Splitter | `StratifiedKFold` | `StratifiedKFold` |
+| Shuffle | `True` | `True` |
+| Scope | one subject, one session | one subject (single-session dataset) |
+| Cross-subject leakage | none (grouped by subject first) | none (validated, unit-tested) |
 
-### 3. `training/config.py` -- new `WithinSubjectConfig`
+This is not a coincidental resemblance to defend -- it is the same
+mechanism as the field's own reference tool. `repeats` (re-running the
+5-fold split with a different seed and aggregating) is an addition beyond
+MOABB's default single pass, included because 40 trials is a genuinely small
+sample and a single 5-fold draw is a noisy estimate; repeated k-fold for
+small-N evaluation is itself a standard variance-reduction technique, not a
+departure from the protocol MOABB runs by default.
 
-Sibling dataclass to `TrainingConfig`, same `__post_init__` validation
-style, but trimmed to what applies (no `patience`, `minimum_improvement`,
-`validation_subjects`, or `seed_strategy` -- none of those concepts exist
-here):
+## The one deviation, stated plainly (not buried) -- RESOLVED
 
-```python
-@dataclass(frozen=True)
-class WithinSubjectConfig:
-    combination: str = DEFAULT_COMBINATION
-    run_name: str | None = None
-    overwrite: bool = False
-    epochs: int = 50
-    batch_size: int = 32
-    learning_rate: float = 0.01
-    weight_decay: float = 5e-4
-    gradient_clip_norm: float | None = 1.0
-    folds: int = 5
-    repeats: int = 1
-    num_workers: int = 0
-    seed: int = 42
-    device: str | None = None
-    output_dir: Path = DEFAULT_OUTPUT_DIR
-    save_outputs: bool = True
-```
+**Update:** implemented. `fit_feature_normalization` (both combination
+modules) now takes an optional `graph_indices` parameter, and
+`train_within_subject_fold` (`training/within_subject.py`) fits it from
+`fold.train_graph_indices` only for every fold. Every other caller
+(`create_loso_dataloaders`, `create_group_dataloaders`, LOSO,
+hyperparameter search) is unaffected -- omitting `graph_indices` keeps their
+exact prior behavior. Verified: full suite (94 tests, 6 new covering the
+scoping directly) passes; a real CLI run's numbers changed relative to the
+pre-fix run (proving the stricter path is active, not a silent no-op); and
+timing stayed ~10s for one subject (no regression -- see
+`training/README.md`'s within-subject Normalization note for the updated
+description). The paragraph below is kept as the original problem
+statement for context.
 
-`epochs=50` matches the existing `search_epochs` default used elsewhere for
-smaller-budget runs -- flagged in the plan and README as a starting point to
-sanity-check via the training-loss curve on a small pilot, not a validated
-number, since the per-fold training set here (~32 trials) is far smaller
-than anything else in this package trains on.
+---
 
-### 4. New file: `training/within_subject.py`
+Per-subject feature normalization (`fit_feature_normalization`) was
+computed from **all 40 of the subject's trials** -- the training fold plus
+the held-out evaluation fold together -- not from the training fold alone. A
+maximally strict protocol would refit normalization per fold, from that
+fold's ~32 training trials only.
 
-Mirrors `hyperparameter_search.py`'s reuse of `engine.py` building blocks
-(`train_epoch`, `evaluate`, `set_seed`, `resolve_device`) and `EEGGCN1`:
+This is not a new or hidden choice: it is the exact same scope already
+documented for the LOSO pipeline (`AUDIT.md` item 3, `training/README.md`'s
+"Normalization baseline" section) -- z-scoring uses a subject's own
+unlabeled trials, which is standard cross-subject alignment practice
+(analogous to Euclidean Alignment) and is low-risk specifically because:
 
-- `WithinSubjectEpochRecord` (`epoch`, `training: ClassificationMetrics`) --
-  lighter than `loso.py`'s `EpochRecord` since there's no validation split
-  per epoch here.
-- `WithinSubjectFoldResult` (`subject_id`, `fold`, `repeat`, `best_epoch`,
-  `epochs_ran`, `evaluation: ClassificationMetrics`,
-  `history: tuple[WithinSubjectEpochRecord, ...]`) with an `as_dict()`
-  matching the `FoldResult` pattern.
-- `train_within_subject_fold(subject_id, fold, *, combination, dataset,
-  config, repeat, show_progress) -> WithinSubjectFoldResult`: builds loaders
-  via `combination.create_within_subject_dataloaders(...)`, seeds via
-  `set_seed(config.seed)`, builds a fresh `EEGGCN1`, trains for the full
-  `config.epochs` budget (no early stop), tracking the best-training-loss
-  checkpoint (`copy.deepcopy(model.state_dict())`, same pattern as
-  `train_loso_fold`) and reloading it before the single `evaluate(...)` call
-  on the fold's evaluation loader.
-- `train_within_subject(subject_id, config, *, dataset, combination,
-  show_progress) -> tuple[WithinSubjectFoldResult, ...]`: builds
-  `create_within_subject_folds(..., k=config.folds, seed=config.seed)`,
-  optionally repeated `config.repeats` times with `seed + repeat` (each
-  repeat reshuffles fold membership), looping `train_within_subject_fold`
-  over every (fold, repeat) pair.
-- `summarize_within_subject_results(results) -> dict`: two-level
-  aggregation mirroring `summarize_results`'s bootstrap-CI machinery
-  (`training/loso.py`) but keyed off `.evaluation` instead of `.test`: first
-  average each subject's own `(fold, repeat)` results into one per-subject
-  balanced accuracy/kappa/etc., then bootstrap-CI *across subjects* on that
-  per-subject-mean list -- consistent with `summarize_results`'s existing
-  "equal subject weighting" philosophy. Implemented as its own small
-  function (not a generalization of `summarize_results`) to avoid touching
-  already-tested code for a shape it wasn't designed for.
-- `train_all_within_subject(config, subject_ids=None, *, dataset=None,
-  show_progress=True) -> tuple[list[WithinSubjectFoldResult], dict]`: loads
-  the dataset once (or reuses one passed in, matching `train_all_loso_folds`'s
-  pattern), resolves `subject_ids` (defaults to every subject in the
-  dataset; accepts an explicit small list for a fast pilot), loops
-  `train_within_subject` per subject, aggregates via
-  `summarize_within_subject_results`.
-- Progress/output: reuse `_bars_enabled`, `_log`, `_write_json`,
-  `_git_provenance`, `_package_versions`, `_default_run_name` imported from
-  `.loso` rather than duplicating that provenance/logging boilerplate --
-  these are generic utilities with no LOSO-specific logic inside them. Saves
-  `run_manifest.json`, `subject_XX/within_subject_results.json` (raw
-  per-fold/per-repeat results), and a run-level
-  `within_subject_summary.json` (per-subject means + the across-subject
-  aggregate) when `save_outputs=True`.
+- it touches no labels, so it cannot leak class information into the split;
+- it only shifts/scales six power/entropy features by a mean and standard
+  deviation computed over highly similar, class-balanced data (32 vs. 40
+  trials from the same subject/session are not meaningfully different
+  distributions).
 
-### 5. New CLI: `training/within_subject_train.py`
+It was nonetheless a real, literal deviation from "fit only on the training
+portion" -- now closed (see the RESOLVED note above).
 
-Mirrors `train.py`/`search_train.py`'s `build_parser()` shape:
-`--subject N` / `--all-subjects` / `--subjects 1,2,3` (mutually exclusive
-group of three, the last for a fast few-subject pilot), `--combination`,
-`--folds` (default 5), `--repeats` (default 1), `--epochs` (default 50),
-`--batch-size`, `--learning-rate`, `--weight-decay`, `--gradient-clip-norm`
-/ `--no-gradient-clipping`, `--seed`, `--device`, `--num-workers`,
-`--output-dir`, `--run-name`, `--overwrite`, `--no-save`. No
-`--patience`-style flag at all, by design (see Constraints).
+## Verdict
 
-### 6. `training/__init__.py`
+- **Subject-scope purity**: intact, enforced, and unit-tested. Not
+  compromised.
+- **Fold structure**: not an invented shortcut -- matches MOABB's own
+  `WithinSessionEvaluation` defaults (5-fold, stratified, shuffled) for this
+  specific single-session dataset.
+- **Normalization scope**: was the one real deviation from a maximally
+  strict protocol; now fits train-fold-only (see RESOLVED note above), so
+  this is no longer a caveat.
 
-Export `WithinSubjectConfig` (from `.config`), and
-`WithinSubjectFoldResult`, `train_within_subject`, `train_all_within_subject`,
-`summarize_within_subject_results` (from `.within_subject`), added to
-imports and `__all__` alongside the existing exports.
+My opinion: this is legitimate to use as a verification signal for the
+dataset-generation pipeline, and with the normalization fix now in, there is
+no remaining known compromise -- both the split mechanics (matching the
+field's own standard tool) and the normalization scope (train-only, per
+fold) hold up under a zero-compromise standard.
 
-### 7. Tests
+## Follow-up: does chance-level performance mean the graph data generation is broken?
 
-- `data/test_loso_split.py`: new `CreateWithinSubjectFoldsTests` --
-  partition covers the target subject's every trial exactly once across
-  folds' evaluation sets, train/evaluation disjoint per fold, each
-  evaluation fold stays class-balanced (stratification actually worked),
-  reproducible given a fixed seed, different seeds reshuffle fold
-  membership, rejects `k` larger than the subject's trial count, rejects a
-  `target_subject` absent from `subject_ids`, and confirms no other
-  subject's indices ever appear.
-- New `training/test_within_subject.py`: integration test (matching
-  `test_hyperparameter_search.py`'s style) with a tiny budget (`folds=2`,
-  `epochs=2`, `save_outputs=False`) on one real subject -- asserts it
-  completes, returns the expected number of `WithinSubjectFoldResult`s,
-  every metric is finite and in `[0, 1]`, same-seed reproducibility, and
-  that `repeats=2` produces `2 * folds` results with different fold
-  membership across repeats.
-- Full suite + a real small pilot CLI run (`--subjects 1,2 --folds 3
-  --epochs 10 --no-save`) to eyeball sane output and inspect the saved
-  training-loss curve for signs of the model actually fitting (or not) its
-  ~30-trial training folds.
+After the normalization fix, a real 50-subject sweep
+(`within_subject_full_v2`) confirmed the same population-level result as
+before: balanced accuracy 0.522 [0.489, 0.556], AUC 0.532 [0.493, 0.571],
+kappa 0.044 [-0.021, 0.111] -- all still centered on chance. But 8 of 50
+subjects individually clear 0.65 balanced accuracy (7, 19, 20, 32, 36, 37,
+40, 42), scattered across the full 1-50 ID range with no clustering. The
+question this raised: does that pattern indict the graph data-generation
+pipeline, or is it consistent with expected small-sample noise/real
+between-subject variability?
 
-### 8. `training/README.md` and `AUDIT.md`
+### Checked so far
 
-Add a "Within-subject classification (diagnostic)" section to the README:
-purpose (decouple cross-subject generalization from "is there signal at
-all"), usage examples, flag table, output files, the normalization-scope
-note repeated from Constraints, and interpretation guidance (chance is
-exactly 0.5 balanced accuracy by construction since folds are
-class-stratified; classic CSP+LDA within-subject baselines land ~65-80% for
-motor imagery, useful as a rough external reference point). `AUDIT.md` gets
-one short pointer sentence in the Bottom line section noting this
-diagnostic tool now exists (it is not a protocol-compliance item, so no
-table rows change).
+**Structural metadata (no anomalies found).** Every one of the 50 subjects
+-- "good" and not -- has identical trial count (40), class balance (20/20),
+sampling rate (500 Hz), trial duration (~2001 samples, ~4s, the ~0.1-0.3
+sample jitter is normal per-trial epoching variance not a defect), and
+consistent per-subject source file naming
+(`sub-NN_task-motor-imagery_eeg.edf`). Rules out a batch/pipeline artifact
+(e.g. a subset of subjects processed differently, mislabeled files, wrong
+sampling rate) as the explanation for who ends up "good."
 
-## What does NOT change
+**A simple, graph-free classifier shows the "good" subjects carry real
+signal, but the correspondence is imperfect.** Built the crudest possible
+alternative representation per subject -- the 6 node features
+(`without_csd`) mean-pooled across all 29 electrodes, plus the alpha-band
+wPLI mean-pooled across all 812 edges (7 numbers per trial, no graph
+structure, no neural net) -- and scored it with 5-fold stratified-CV LDA:
 
-- `loso.py`, `hyperparameter_search.py`, `search_train.py`, `train.py`, and
-  every existing test are untouched except the internal-only
-  `create_group_dataloaders` refactor in the two combination modules, whose
-  public signature and behavior stay identical.
-- No model/architecture changes -- same `EEGGCN1`/`EEGGCN1Config`, so a
-  within-subject signal finding (or lack of one) is attributable to the
-  data/task, not a different model.
+- The 8 GNN-"good" subjects average 0.612 balanced accuracy on this simple
+  classifier vs. 0.484 for the other 42 -- a real, meaningful gap.
+- Correlation between this simple classifier's per-subject score and the
+  GNN's per-subject score across all 50 subjects: **r = 0.516**.
+- Not a clean 1:1 relationship: subjects 32 and 36 are GNN-good (0.675
+  each) but score *below chance* on the simple classifier (0.450, 0.425);
+  subject 38 scores well on the simple classifier (0.625) but the GNN did
+  poorly on it (0.425).
 
-## Verification (once implemented)
+Interpretation: roughly a quarter of the variance in "which subjects the
+GNN does well on" is explained by something visible even in trivial
+mean-pooled band-power/connectivity, meaning the standout subjects are not
+purely a fluke of one GNN training run. But the imperfect correspondence
+means single-run GNN noise (only 8 held-out trials per fold) is also a real
+contributor -- expected, not a bug, given the sample size.
 
-1. `python -m pytest src/ourexperimentversionfour -q` -- all existing +
-   new tests pass.
-2. A real pilot run: `python -m src.ourexperimentversionfour.training.within_subject_train
-   --subjects 1,2 --folds 3 --epochs 10 --no-save` -- inspect the printed
-   per-fold evaluation metrics and training-loss curve for sanity (finite
-   values, training loss actually decreasing, plausible balanced-accuracy
-   range).
-3. Do **not** run the full 50-subject sweep as part of verification --
-   confirm the small pilot works first, then it's your call whether/when to
-   run all 50 (much cheaper than the hyperparameter search: 50 subjects x 5
-   folds x 50 epochs, no inner search multiplier, so this should finish in
-   well under an hour based on this session's per-epoch timings).
+### Not yet checked -- two open items before concluding "graph generation is fine"
+
+1. **Edge/graph topology has not been isolated from node features.** The
+   simple-classifier check above collapsed all 812 edges into one mean
+   scalar -- it tests whether *some* connectivity signal exists, not
+   whether `edge_index`/the per-edge wPLI values are structurally correct
+   (right electrode pairs, no transposition/indexing bug, no duplicate or
+   missing edges, values in wPLI's valid `[0, 1]` range). Proposed check:
+   (a) a structural sanity pass over `edge_index` and the raw
+   `wpli_without_csd` array (edge count == 29*28 == 812 confirmed already
+   by `validate_dataset`, but not duplicate-pair or self-loop checks, nor a
+   value-range check across all subjects/trials/bands); (b) an edges-only
+   vs. nodes-only version of the simple-classifier check above (drop node
+   features entirely and use only the 812 per-edge alpha wPLI values,
+   flattened, with the same 5-fold LDA) to see whether connectivity alone
+   carries separable signal independent of node power features, rather
+   than only ever testing them combined.
+2. **No comparison against Liu2024's own published baseline.** "Classic
+   CSP+LDA motor imagery lands 65-80%" (cited earlier as an external
+   reference point) is a rule of thumb from *other* motor-imagery datasets,
+   not a confirmed number for Liu2024 itself. Chance-level average
+   performance here could be the *expected* result for this specific
+   dataset/task (some public MI datasets are known to be hard, with many
+   BCI-illiterate subjects near chance) rather than a sign of anything
+   broken in this pipeline. Proposed check: find Liu2024's original
+   publication (or its MOABB dataset entry/documentation) and see what
+   classification accuracy it reports, if any, as a same-dataset ceiling to
+   compare against instead of a generic literature range.
+
+Neither of these has been implemented yet -- recorded here so they aren't
+lost, not decided unilaterally, since they involve either new analysis code
+or external literature lookup rather than a small in-repo fix.

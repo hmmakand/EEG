@@ -31,6 +31,7 @@ from .validation import (
     load_dataset,
     validate_dataset,
 )
+from .within_subject_split import WithinSubjectFold, create_within_subject_folds
 from .without_csd_alpha_wpli import (
     create_loso_dataloaders,
     fit_feature_normalization,
@@ -54,9 +55,11 @@ __all__ = [
     "LosoGraphSplit",
     "NODE_FEATURE_NAMES",
     "NODE_VARIANT",
+    "WithinSubjectFold",
     "alpha_band_index",
     "create_loso_dataloaders",
     "create_loso_splits",
+    "create_within_subject_folds",
     "fit_feature_normalization",
     "get_combination",
     "load_dataset",

@@ -193,13 +193,22 @@ def fit_feature_normalization(
     dataset: SavedDataset,
     *,
     epsilon: float = 1e-8,
+    graph_indices: np.ndarray | None = None,
 ) -> FeatureNormalization:
     """Fit one z-scoring statistic per subject from that subject's own trials.
 
-    Every subject present in ``dataset`` gets its own six-column mean/std,
-    computed only from its own ``csd`` node features -- independent of which
-    LOSO fold or split a subject ends up in, so this can be (and is) fit
-    once per dataset rather than once per fold.
+    Every subject present in ``dataset`` (or, if ``graph_indices`` is given,
+    present among those indices) gets its own six-column mean/std, computed
+    only from its own ``csd`` node features -- independent of which LOSO
+    fold or split a subject ends up in, so this can be (and is) fit once per
+    dataset rather than once per fold.
+
+    ``graph_indices``, when given, restricts fitting to only those graphs
+    instead of every graph in ``dataset`` -- used by the within-subject
+    diagnostic to fit strictly from one fold's training indices, excluding
+    that fold's held-out evaluation trials (see ``WITHIN_SUBJECT_PLAN.md``).
+    Omitting it fits from the whole dataset, matching every other caller's
+    existing behavior unchanged.
     """
 
     if epsilon <= 0:
@@ -209,10 +218,18 @@ def fit_feature_normalization(
         [sample["subject"] for sample in dataset.samples], dtype=np.int64
     )
     node_features = dataset.nodes[NODE_VARIANT]
+    if graph_indices is not None:
+        resolved_indices = np.asarray(graph_indices, dtype=np.int64)
+        subject_ids = subject_ids[resolved_indices]
+    else:
+        resolved_indices = None
     mean_by_subject: dict[int, torch.Tensor] = {}
     standard_deviation_by_subject: dict[int, torch.Tensor] = {}
     for subject in np.unique(subject_ids):
-        indices = np.flatnonzero(subject_ids == subject)
+        if resolved_indices is not None:
+            indices = resolved_indices[subject_ids == subject]
+        else:
+            indices = np.flatnonzero(subject_ids == subject)
         subject_features = np.asarray(node_features[indices], dtype=np.float64)
         if subject_features.shape[1:] != (EXPECTED_NODES, EXPECTED_NODE_FEATURES):
             raise ValueError(
@@ -329,6 +346,56 @@ def create_loso_dataloaders(
     )
 
 
+def _create_indexed_dataloaders(
+    dataset: SavedDataset,
+    train_graph_indices: np.ndarray,
+    evaluation_graph_indices: np.ndarray,
+    config: GraphDataLoaderConfig,
+    *,
+    dataset_validated: bool = False,
+    normalization: FeatureNormalization | None = None,
+) -> tuple[DataLoader, DataLoader, FeatureNormalization]:
+    """Build a train/evaluation loader pair directly from raw graph indices.
+
+    Shared tail for both :func:`create_group_dataloaders` (which first
+    resolves subject-ID tuples into graph indices) and
+    :func:`create_within_subject_dataloaders` (whose indices are already one
+    subject's own trials, with no subject-ID tuple to resolve).
+
+    ``normalization`` lets a caller that already fit it once (it depends
+    only on ``dataset``/``epsilon``, not on which indices are requested)
+    pass it in and skip refitting it on every call -- e.g. the within-subject
+    diagnostic, which otherwise would recompute every subject's normalization
+    from scratch for each of its many folds. Defaults to fitting it fresh,
+    matching every existing caller's current behavior.
+    """
+
+    if not dataset_validated:
+        validate_dataset(dataset)
+    band_index = alpha_band_index(dataset)
+    if normalization is None:
+        normalization = fit_feature_normalization(
+            dataset, epsilon=config.normalization_epsilon
+        )
+    train_loader = _make_loader(
+        dataset,
+        train_graph_indices,
+        normalization,
+        config,
+        band_index=band_index,
+        shuffle=True,
+    )
+    evaluation_loader = _make_loader(
+        dataset,
+        evaluation_graph_indices,
+        normalization,
+        config,
+        band_index=band_index,
+        shuffle=False,
+    )
+    return train_loader, evaluation_loader, normalization
+
+
 def create_group_dataloaders(
     *,
     dataset: SavedDataset,
@@ -345,32 +412,44 @@ def create_group_dataloaders(
     fold's development subjects.
     """
 
-    if not dataset_validated:
-        validate_dataset(dataset)
-
-    band_index = alpha_band_index(dataset)
     subject_ids = _subject_ids(dataset)
     train_graph_indices = _graph_indices_for_subjects(subject_ids, train_subject_ids)
     validation_graph_indices = _graph_indices_for_subjects(
         subject_ids, validation_subject_ids
     )
-    normalization = fit_feature_normalization(
-        dataset, epsilon=config.normalization_epsilon
-    )
-    train_loader = _make_loader(
+    return _create_indexed_dataloaders(
         dataset,
         train_graph_indices,
-        normalization,
-        config,
-        band_index=band_index,
-        shuffle=True,
-    )
-    validation_loader = _make_loader(
-        dataset,
         validation_graph_indices,
-        normalization,
         config,
-        band_index=band_index,
-        shuffle=False,
+        dataset_validated=dataset_validated,
     )
-    return train_loader, validation_loader, normalization
+
+
+def create_within_subject_dataloaders(
+    *,
+    dataset: SavedDataset,
+    train_graph_indices: np.ndarray,
+    evaluation_graph_indices: np.ndarray,
+    config: GraphDataLoaderConfig,
+    dataset_validated: bool = False,
+    normalization: FeatureNormalization | None = None,
+) -> tuple[DataLoader, DataLoader, FeatureNormalization]:
+    """Build train/evaluation loaders for one within-subject diagnostic fold.
+
+    Takes raw graph indices directly -- a within-subject fold has no
+    subject-ID tuple to resolve, since its indices are already one
+    subject's own trials (see
+    ``src.ourexperimentversionfour.data.within_subject_split``). Pass a
+    pre-fit ``normalization`` (see :func:`_create_indexed_dataloaders`) to
+    avoid refitting it on every one of a run's many folds.
+    """
+
+    return _create_indexed_dataloaders(
+        dataset,
+        train_graph_indices,
+        evaluation_graph_indices,
+        config,
+        dataset_validated=dataset_validated,
+        normalization=normalization,
+    )

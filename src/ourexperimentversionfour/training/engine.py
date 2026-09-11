@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 from collections.abc import Iterable
+from typing import Literal
 
 import numpy as np
 import torch
@@ -12,6 +13,8 @@ from torch import nn
 from torch_geometric.data import Batch
 
 from .metrics import ClassificationMetrics, calculate_metrics
+
+OptimizerName = Literal["adamw", "adam", "sgd"]
 
 
 def set_seed(seed: int) -> None:
@@ -36,6 +39,42 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
     os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     torch.use_deterministic_algorithms(True)
+
+
+def build_optimizer(
+    model: nn.Module,
+    *,
+    optimizer: OptimizerName,
+    learning_rate: float,
+    weight_decay: float,
+    momentum: float = 0.9,
+) -> torch.optim.Optimizer:
+    """Construct the configured optimizer.
+
+    One shared switch point so LOSO training (``loso.py``), the inner-CV
+    hyperparameter search (``hyperparameter_search.py``), and the
+    within-subject diagnostic (``within_subject.py``) all pick between AdamW
+    (the existing default), plain Adam, and SGD-with-momentum the same way
+    -- a training mechanic, independent of which data split or config type
+    is calling it. ``momentum`` is ignored for ``"adamw"``/``"adam"``.
+    """
+
+    if optimizer == "adamw":
+        return torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+    if optimizer == "adam":
+        return torch.optim.Adam(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
+    if optimizer == "sgd":
+        return torch.optim.SGD(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay,
+            momentum=momentum,
+        )
+    raise ValueError(f"Unknown optimizer {optimizer!r}; choose 'adamw', 'adam', or 'sgd'")
 
 
 def resolve_device(requested: str | None = None) -> torch.device:

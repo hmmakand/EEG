@@ -10,7 +10,14 @@
     "runArgs": [
         "--gpus=all",
 		"--network=host"
-    ]
+    ],
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+			}
+		}
+	}
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
 	// "features": {},

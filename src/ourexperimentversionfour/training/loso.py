@@ -39,7 +39,7 @@ from src.ourexperimentversionfour.data.combinations import Combination, get_comb
 from src.ourexperimentversionfour.model import EEGGCN1, EEGGCN1Config
 
 from .config import TrainingConfig
-from .engine import evaluate, resolve_device, set_seed, train_epoch
+from .engine import build_optimizer, evaluate, resolve_device, set_seed, train_epoch
 from .hyperparameter_search import DEFAULT_SEARCH_GRID, select_hyperparameters
 from .metrics import ClassificationMetrics
 
@@ -353,7 +353,9 @@ def _log_run_context(
     _log(f"Device          : {device}", enabled=enabled)
     _log(
         f"Training        : epochs={config.epochs}, batch={config.batch_size}, "
-        f"lr={config.learning_rate:g}, weight_decay={config.weight_decay:g}, "
+        f"optimizer={config.optimizer}"
+        + (f" (momentum={config.momentum:g})" if config.optimizer == "sgd" else "")
+        + f", lr={config.learning_rate:g}, weight_decay={config.weight_decay:g}, "
         f"gradient_clip={config.gradient_clip_norm}",
         enabled=enabled,
     )
@@ -631,10 +633,12 @@ def train_loso_fold(
         enabled=show_progress,
     )
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=resolved_config.learning_rate,
+    optimizer = build_optimizer(
+        model,
+        optimizer=resolved_config.optimizer,
+        learning_rate=resolved_config.learning_rate,
         weight_decay=resolved_config.weight_decay,
+        momentum=resolved_config.momentum,
     )
     loss_function = nn.NLLLoss()
     best_validation_loss = float("inf")

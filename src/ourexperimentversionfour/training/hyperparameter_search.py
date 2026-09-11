@@ -25,7 +25,7 @@ from src.ourexperimentversionfour.data.loso_split import GraphDataLoaderConfig, 
 from src.ourexperimentversionfour.model import EEGGCN1, EEGGCN1Config
 
 from .config import TrainingConfig
-from .engine import evaluate, resolve_device, set_seed, train_epoch
+from .engine import build_optimizer, evaluate, resolve_device, set_seed, train_epoch
 
 
 DEFAULT_SEARCH_GRID: list[dict[str, Any]] = [
@@ -90,10 +90,12 @@ def _score_candidate(
         model = EEGGCN1(
             EEGGCN1Config(input_features=EXPECTED_NODE_FEATURES, nodes=EXPECTED_NODES)
         ).to(device)
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=candidate_config.learning_rate,
+        optimizer = build_optimizer(
+            model,
+            optimizer=candidate_config.optimizer,
+            learning_rate=candidate_config.learning_rate,
             weight_decay=candidate_config.weight_decay,
+            momentum=candidate_config.momentum,
         )
         loss_function = nn.NLLLoss()
 

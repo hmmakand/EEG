@@ -18,6 +18,7 @@ from src.ourexperimentversionfour.training import (
     ClassificationMetrics,
     FoldResult,
     TrainingConfig,
+    build_optimizer,
     evaluate,
     summarize_results,
     train_epoch,
@@ -101,6 +102,37 @@ class TrainingUtilityTests(unittest.TestCase):
         self.assertEqual(training.examples, 8)
         self.assertEqual(evaluation.examples, 8)
 
+    def test_build_optimizer_returns_the_requested_optimizer_type(self) -> None:
+        model = EEGGCN1()
+        adamw = build_optimizer(
+            model, optimizer="adamw", learning_rate=0.01, weight_decay=5e-4
+        )
+        self.assertIsInstance(adamw, torch.optim.AdamW)
+        adam = build_optimizer(
+            model, optimizer="adam", learning_rate=0.01, weight_decay=5e-4
+        )
+        self.assertIsInstance(adam, torch.optim.Adam)
+        self.assertNotIsInstance(adam, torch.optim.AdamW)
+        sgd = build_optimizer(
+            model,
+            optimizer="sgd",
+            learning_rate=0.01,
+            weight_decay=5e-4,
+            momentum=0.9,
+        )
+        self.assertIsInstance(sgd, torch.optim.SGD)
+        self.assertAlmostEqual(sgd.defaults["momentum"], 0.9)
+
+    def test_build_optimizer_rejects_unknown_names(self) -> None:
+        model = EEGGCN1()
+        with self.assertRaisesRegex(ValueError, "Unknown optimizer"):
+            build_optimizer(
+                model,
+                optimizer="rmsprop",  # type: ignore[arg-type]
+                learning_rate=0.01,
+                weight_decay=5e-4,
+            )
+
     def test_configuration_rejects_invalid_options(self) -> None:
         with self.assertRaises(ValueError):
             TrainingConfig(epochs=0)
@@ -110,11 +142,17 @@ class TrainingUtilityTests(unittest.TestCase):
             TrainingConfig(run_name="nested/run")
         with self.assertRaisesRegex(ValueError, "Unknown combination"):
             TrainingConfig(combination="not_a_real_combination")
+        with self.assertRaisesRegex(ValueError, "optimizer must be"):
+            TrainingConfig(optimizer="rmsprop")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(ValueError, "momentum must be"):
+            TrainingConfig(momentum=1.5)
         parser = build_parser()
         option_destinations = {
             action.dest for action in parser._actions  # type: ignore[attr-defined]
         }
         self.assertIn("combination", option_destinations)
+        self.assertIn("optimizer", option_destinations)
+        self.assertIn("momentum", option_destinations)
 
     def test_default_combination_is_without_csd_alpha_wpli(self) -> None:
         self.assertEqual(TrainingConfig().combination, "without_csd_alpha_wpli")
@@ -127,6 +165,22 @@ class TrainingUtilityTests(unittest.TestCase):
                 epochs=1,
                 batch_size=64,
                 seed=42,
+                save_outputs=False,
+            ),
+            show_progress=False,
+        )
+        self.assertEqual(result.test_subject_id, 1)
+        self.assertEqual(result.test.examples, 40)
+
+    def test_fold_training_can_select_sgd(self) -> None:
+        result = train_loso_fold(
+            1,
+            TrainingConfig(
+                epochs=1,
+                batch_size=64,
+                seed=42,
+                optimizer="sgd",
+                momentum=0.9,
                 save_outputs=False,
             ),
             show_progress=False,

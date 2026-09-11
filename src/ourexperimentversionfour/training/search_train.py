@@ -57,6 +57,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--weight-decay", type=float, default=defaults.weight_decay
     )
+    parser.add_argument(
+        "--optimizer",
+        choices=("adamw", "adam", "sgd"),
+        default=defaults.optimizer,
+        help="which optimizer to train with (used by both the inner-CV "
+        "search and the final retrain, unlike --learning-rate/--weight-decay)",
+    )
+    parser.add_argument(
+        "--momentum",
+        type=float,
+        default=defaults.momentum,
+        help="SGD momentum; ignored for adamw/adam",
+    )
     patience_group = parser.add_mutually_exclusive_group()
     patience_group.add_argument(
         "--patience", type=int, default=defaults.patience
@@ -158,6 +171,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "batch_size": args.batch_size,
         "learning_rate": args.learning_rate,
         "weight_decay": args.weight_decay,
+        "optimizer": args.optimizer,
+        "momentum": args.momentum,
         "patience": args.patience,
         "minimum_improvement": args.minimum_improvement,
         "gradient_clip_norm": args.gradient_clip_norm,

@@ -2,7 +2,8 @@
 
 Every combination module (``without_csd_alpha_wpli``, ``csd_alpha_wpli``, ...)
 exposes the same shape -- ``load_dataset``, ``validate_dataset``,
-``create_loso_dataloaders``, ``create_group_dataloaders``, and
+``create_loso_dataloaders``, ``create_group_dataloaders``,
+``create_within_subject_dataloaders``, ``fit_feature_normalization``, and
 ``GraphDataLoaderConfig`` -- so training code can select one by name instead
 of importing a specific module. To add a new combination: write a sibling
 module with that same shape, then add one entry below.
@@ -25,9 +26,11 @@ from .loso_split import FeatureNormalization, GraphDataLoaderConfig, LosoDataLoa
 class Combination:
     """One selectable node-variant/edge-variant/band pairing.
 
-    ``load_dataset``, ``validate_dataset``, ``create_loso_dataloaders``, and
-    ``create_group_dataloaders`` are the corresponding module's functions of
-    the same name -- see :mod:`without_csd_alpha_wpli` for their contract.
+    ``load_dataset``, ``validate_dataset``, ``create_loso_dataloaders``,
+    ``create_group_dataloaders``, ``create_within_subject_dataloaders``, and
+    ``fit_feature_normalization`` are the corresponding module's functions
+    of the same name -- see :mod:`without_csd_alpha_wpli` for their
+    contract.
     """
 
     name: str
@@ -38,6 +41,10 @@ class Combination:
     validate_dataset: Callable[[SavedDataset], None]
     create_loso_dataloaders: Callable[..., LosoDataLoaderBundle]
     create_group_dataloaders: Callable[..., tuple[DataLoader, DataLoader, FeatureNormalization]]
+    create_within_subject_dataloaders: Callable[
+        ..., tuple[DataLoader, DataLoader, FeatureNormalization]
+    ]
+    fit_feature_normalization: Callable[..., FeatureNormalization]
 
 
 COMBINATIONS: dict[str, Combination] = {
@@ -50,6 +57,8 @@ COMBINATIONS: dict[str, Combination] = {
         validate_dataset=without_csd_alpha_wpli.validate_dataset,
         create_loso_dataloaders=without_csd_alpha_wpli.create_loso_dataloaders,
         create_group_dataloaders=without_csd_alpha_wpli.create_group_dataloaders,
+        create_within_subject_dataloaders=without_csd_alpha_wpli.create_within_subject_dataloaders,
+        fit_feature_normalization=without_csd_alpha_wpli.fit_feature_normalization,
     ),
     "csd_alpha_wpli": Combination(
         name="csd_alpha_wpli",
@@ -60,6 +69,8 @@ COMBINATIONS: dict[str, Combination] = {
         validate_dataset=csd_alpha_wpli.validate_dataset,
         create_loso_dataloaders=csd_alpha_wpli.create_loso_dataloaders,
         create_group_dataloaders=csd_alpha_wpli.create_group_dataloaders,
+        create_within_subject_dataloaders=csd_alpha_wpli.create_within_subject_dataloaders,
+        fit_feature_normalization=csd_alpha_wpli.fit_feature_normalization,
     ),
 }
 

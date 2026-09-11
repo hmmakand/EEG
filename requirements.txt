@@ -35,5 +35,9 @@
 # pip install -U pytest
 
 # Persistent homology for manuscript-candidate graph features.
-ripser==0.6.15
-mypy==2.3.1
+# ripser==0.6.15
+# pip install ripser
+# mypy==2.3.1
+# pip install mypy
+
+# pip install torch_geometric

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import torch;print\\('torch',torch.__version__,'cuda',torch.cuda.is_available\\(\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
