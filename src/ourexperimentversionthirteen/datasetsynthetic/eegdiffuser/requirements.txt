@@ -1,0 +1,4 @@
+numpy
+torch
+timm==1.0.29
+tqdm

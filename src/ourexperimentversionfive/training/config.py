@@ -1,0 +1,244 @@
+"""Configuration for experiment five's selectable-combination LOSO training."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
+
+from src.ourexperimentversionfive.data.combinations import COMBINATIONS, DEFAULT_COMBINATION
+
+from .engine import OptimizerName
+
+
+DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "outputs"
+SeedStrategy = Literal["shared", "per_fold"]
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    """Hyperparameters and runtime options shared by all LOSO folds.
+
+    ``combination`` selects which node/edge/band pairing to train on (see
+    ``src.ourexperimentversionfive.data.combinations.COMBINATIONS``); every
+    registered combination shares the same 29-node, 8-feature, single-edge-
+    weight contract, so the model and training loop do not change when it
+    is switched.
+    """
+
+    node_normalization: str = "none"
+    combination: str = DEFAULT_COMBINATION
+    run_name: str | None = None
+    overwrite: bool = False
+    seed_strategy: SeedStrategy = "shared"
+    epochs: int = 200
+    batch_size: int = 32
+    learning_rate: float = 0.01
+    """Standard Adam/GCN supervised-training default (Kipf & Welling 2017),
+    not tuned to any particular combination."""
+    weight_decay: float = 5e-4
+    """Standard GCN weight decay (Kipf & Welling 2017)."""
+    optimizer: OptimizerName = "adamw"
+    """Which optimizer to build (see ``engine.build_optimizer``)."""
+    momentum: float = 0.9
+    """SGD momentum; ignored when ``optimizer`` is ``"adamw"``."""
+    patience: int | None = 10
+    """Early-stopping patience on validation loss; ``None`` disables early
+    stopping entirely and always runs the full ``epochs`` budget."""
+    minimum_improvement: float = 1e-4
+    gradient_clip_norm: float | None = 1.0
+    validation_subjects: int = 5
+    num_workers: int = 0
+    seed: int = 42
+    device: str | None = None
+    output_dir: Path = DEFAULT_OUTPUT_DIR
+    save_outputs: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "output_dir", Path(self.output_dir).expanduser().resolve()
+        )
+        if self.node_normalization not in ("none", "zscore"):
+            raise ValueError("node_normalization must be none or zscore")
+        if self.combination not in COMBINATIONS:
+            raise ValueError(
+                f"Unknown combination {self.combination!r}; choose one of "
+                f"{sorted(COMBINATIONS)}"
+            )
+        if self.run_name is not None:
+            if not self.run_name or self.run_name in {".", ".."}:
+                raise ValueError("run_name must be a non-empty directory name")
+            if Path(self.run_name).name != self.run_name:
+                raise ValueError("run_name cannot contain path separators")
+        if self.seed_strategy not in ("shared", "per_fold"):
+            raise ValueError("seed_strategy must be 'shared' or 'per_fold'")
+        if self.epochs <= 0:
+            raise ValueError("epochs must be positive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be finite and non-negative")
+        if self.optimizer not in ("adamw", "adam", "sgd"):
+            raise ValueError("optimizer must be 'adamw', 'adam', or 'sgd'")
+        if not math.isfinite(self.momentum) or not 0 <= self.momentum < 1:
+            raise ValueError("momentum must be finite and in the interval [0, 1)")
+        if self.patience is not None and self.patience <= 0:
+            raise ValueError("patience must be positive or None")
+        if (
+            not math.isfinite(self.minimum_improvement)
+            or self.minimum_improvement < 0
+        ):
+            raise ValueError(
+                "minimum_improvement must be finite and non-negative"
+            )
+        if self.gradient_clip_norm is not None and (
+            not math.isfinite(self.gradient_clip_norm)
+            or self.gradient_clip_norm <= 0
+        ):
+            raise ValueError(
+                "gradient_clip_norm must be finite and positive or None"
+            )
+        if self.validation_subjects <= 0:
+            raise ValueError("validation_subjects must be positive")
+        if self.num_workers < 0:
+            raise ValueError("num_workers cannot be negative")
+        if not 0 <= self.seed <= 2**32 - 1:
+            raise ValueError("seed must be in the interval [0, 2**32 - 1]")
+        if self.device not in (None, "cpu", "cuda"):
+            raise ValueError("device must be None, 'cpu', or 'cuda'")
+
+
+@dataclass(frozen=True)
+class WithinSubjectConfig:
+    """Hyperparameters and runtime options for the within-subject diagnostic.
+
+    Sibling of :class:`TrainingConfig`, trimmed to what applies here: no
+    ``validation_subjects`` (folds are built from one subject's own trials,
+    not cross-subject groups) and no ``seed_strategy`` (every fold shares one
+    seed; there is no per-test-subject notion here). Adds ``folds``
+    (within-subject k-fold count), ``repeats`` (re-run the k-fold split with
+    a different seed and aggregate, since 32-40 trials per fold is a
+    small-sample regime), and ``inner_validation_fraction``.
+
+    ``patience``/``minimum_improvement``/``inner_validation_fraction``
+    together drive epoch selection: each fold carves
+    ``inner_validation_fraction`` of its *own training trials* into an inner
+    validation split (never touching the fold's evaluation trials) and
+    early-stops on that split's loss to decide how many epochs to train the
+    real, full-training-set model for. Checkpointing on training loss alone
+    (this diagnostic's original behavior) was removed because training loss
+    decreases near-monotonically, so it always selected the most-overfit,
+    latest epoch -- see the commit that introduced this field for the
+    within-subject-diagnostic overfitting analysis that motivated it.
+    """
+
+    classifier: str = "linear"
+    edge_mode: str = "self_only"
+    node_normalization: str = "zscore"
+    combination: str = DEFAULT_COMBINATION
+    run_name: str | None = None
+    overwrite: bool = False
+    epochs: int = 50
+    batch_size: int = 8
+    """Deliberately much smaller than :class:`TrainingConfig`'s 32: every
+    fold's training set here is only 24-32 trials, at or below that larger
+    default, which collapsed every epoch into a single full-batch gradient
+    step (confirmed directly: ``len(train_loader) == 1``). Combined with
+    Adam's unstable early moment estimates, that produced erratic epoch-to-
+    epoch loss swings and caused the epoch-selection pass to frequently
+    stop after just 1 step, selecting a still-near-random-init model (>40%
+    of folds finished final training at or below 60% *training* accuracy
+    before this was lowered). 8 gives 3-4 mini-batches per epoch for every
+    fold, restoring multiple real gradient updates per epoch and per
+    ``patience`` unit."""
+    learning_rate: float = 0.001
+    weight_decay: float = 5e-4
+    optimizer: OptimizerName = "adamw"
+    """Which optimizer to build (see ``engine.build_optimizer``)."""
+    momentum: float = 0.9
+    """SGD momentum; ignored when ``optimizer`` is ``"adamw"``."""
+    patience: int | None = None
+    """Early-stopping patience on the inner-validation-split loss used for
+    epoch selection; ``None`` disables early stopping and always runs the
+    full ``epochs`` budget for the selection pass."""
+    minimum_improvement: float = 1e-4
+    inner_validation_fraction: float = 0.25
+    """Fraction of each fold's training trials held back as an inner
+    validation split for epoch selection only (never touches the fold's
+    evaluation trials)."""
+    gradient_clip_norm: float | None = 1.0
+    folds: int = 5
+    repeats: int = 1
+    num_workers: int = 0
+    seed: int = 42
+    device: str | None = None
+    output_dir: Path = DEFAULT_OUTPUT_DIR
+    save_outputs: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "output_dir", Path(self.output_dir).expanduser().resolve()
+        )
+        if self.classifier not in ("mlp", "linear"):
+            raise ValueError("classifier must be mlp or linear")
+        if self.edge_mode not in ("weighted", "self_only"):
+            raise ValueError("edge_mode must be weighted or self_only")
+        if self.node_normalization not in ("none", "zscore"):
+            raise ValueError("node_normalization must be none or zscore")
+        if self.combination not in COMBINATIONS:
+            raise ValueError(
+                f"Unknown combination {self.combination!r}; choose one of "
+                f"{sorted(COMBINATIONS)}"
+            )
+        if self.run_name is not None:
+            if not self.run_name or self.run_name in {".", ".."}:
+                raise ValueError("run_name must be a non-empty directory name")
+            if Path(self.run_name).name != self.run_name:
+                raise ValueError("run_name cannot contain path separators")
+        if self.epochs <= 0:
+            raise ValueError("epochs must be positive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        if not math.isfinite(self.weight_decay) or self.weight_decay < 0:
+            raise ValueError("weight_decay must be finite and non-negative")
+        if self.optimizer not in ("adamw", "adam", "sgd"):
+            raise ValueError("optimizer must be 'adamw', 'adam', or 'sgd'")
+        if not math.isfinite(self.momentum) or not 0 <= self.momentum < 1:
+            raise ValueError("momentum must be finite and in the interval [0, 1)")
+        if self.patience is not None and self.patience <= 0:
+            raise ValueError("patience must be positive or None")
+        if (
+            not math.isfinite(self.minimum_improvement)
+            or self.minimum_improvement < 0
+        ):
+            raise ValueError(
+                "minimum_improvement must be finite and non-negative"
+            )
+        if not math.isfinite(self.inner_validation_fraction) or not (
+            0 < self.inner_validation_fraction < 1
+        ):
+            raise ValueError(
+                "inner_validation_fraction must be finite and in the interval (0, 1)"
+            )
+        if self.gradient_clip_norm is not None and (
+            not math.isfinite(self.gradient_clip_norm)
+            or self.gradient_clip_norm <= 0
+        ):
+            raise ValueError(
+                "gradient_clip_norm must be finite and positive or None"
+            )
+        if self.folds < 2:
+            raise ValueError("folds must be at least 2")
+        if self.repeats <= 0:
+            raise ValueError("repeats must be positive")
+        if self.num_workers < 0:
+            raise ValueError("num_workers cannot be negative")
+        if not 0 <= self.seed <= 2**32 - 1:
+            raise ValueError("seed must be in the interval [0, 2**32 - 1]")
+        if self.device not in (None, "cpu", "cuda"):
+            raise ValueError("device must be None, 'cpu', or 'cuda'")

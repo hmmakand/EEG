@@ -1,0 +1,287 @@
+[
+  {
+    "indices": [
+      125,
+      165
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "5",
+      "5"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      129,
+      169
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "9",
+      "9"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      133,
+      173
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "13",
+      "13"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      134,
+      174
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "14",
+      "14"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      139,
+      179
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "19",
+      "19"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      140,
+      180
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "20",
+      "20"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      142,
+      182
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "22",
+      "22"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      146,
+      186
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "26",
+      "26"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      147,
+      187
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "27",
+      "27"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      149,
+      189
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "29",
+      "29"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      151,
+      191
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "31",
+      "31"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      152,
+      192
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "32",
+      "32"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      155,
+      195
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "35",
+      "35"
+    ],
+    "labels": [
+      1,
+      1
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      156,
+      196
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "36",
+      "36"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  },
+  {
+    "indices": [
+      158,
+      198
+    ],
+    "subjects": [
+      "4",
+      "5"
+    ],
+    "trials": [
+      "38",
+      "38"
+    ],
+    "labels": [
+      0,
+      0
+    ],
+    "all_edges_identical": true
+  }
+]

@@ -1,0 +1,162 @@
+[
+  {
+    "trial": 0,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 1,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 2,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 3,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 4,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 5,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 6,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 7,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 8,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 9,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 10,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 11,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 12,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 13,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 14,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 15,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 16,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 17,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 18,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 19,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 20,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 21,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 22,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 23,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 24,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 25,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 26,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 27,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 28,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 29,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 30,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 31,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 32,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 33,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 34,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 35,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 36,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 37,
+    "all_channels_equal": false
+  },
+  {
+    "trial": 38,
+    "all_channels_equal": true
+  },
+  {
+    "trial": 39,
+    "all_channels_equal": false
+  }
+]

@@ -41,3 +41,4 @@
 # pip install mypy
 
 # pip install torch_geometric
+# pip install -U mne-connectivity
