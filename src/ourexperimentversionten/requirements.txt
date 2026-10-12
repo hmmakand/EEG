@@ -2,6 +2,5 @@ torch
 torch-geometric
 numpy
 scipy
-networkx
 scikit-learn
 tqdm

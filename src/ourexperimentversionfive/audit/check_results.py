@@ -10,7 +10,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
 ROOT = Path(__file__).resolve().parents[1]
-D = Path('data/moabb/Graph-Liu2024-VersionTwo')
+# Server path: D = Path('data/moabb/Graph-Liu2024-VersionTwo')
+D = Path("/workspaces/datadisk/databci/eegdata/moabb/Graph-Liu2024-VersionTwo")
 out = {'runs': {}}
 for p in sorted((ROOT/'outputs').iterdir()):
     if not (p/'within_subject_summary.json').exists(): continue

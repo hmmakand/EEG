@@ -1,0 +1,72 @@
+"""Training settings; dataset rules remain in dataset/config.py."""
+from dataclasses import dataclass
+import math
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class TrainingConfig:
+    subjects: tuple[int, ...] = (1, 2, 3, 5, 6, 7, 8, 9)
+    n_folds: int = 10
+    split_shuffle: bool = True
+    split_seed: int = 42
+    fold_seed: int = 12345
+    batch_size: int = 32
+    # Shuffled with the fold seed. The saved LOSO order groups trials by
+    # subject, so unshuffled batches each come from a single subject.
+    train_shuffle: bool = True
+    test_shuffle: bool = False
+    learning_rate: float = 0.001
+    weight_decay: float = 0.001
+    # The original range(1, 250) executes exactly 249 epochs.
+    num_epochs: int = 249
+    model: str = "custom"  # "custom" (model/custom) or "gat" (model/gat.py)
+    # Custom model only: which paths contribute to the logits (ablations).
+    model_paths: tuple[str, ...] = ("graph", "wide", "temporal")
+    # GAT only; the custom model takes its sizes from model/custom/config.py.
+    hidden_channels: int = 22
+    heads: int = 3
+    optimizer: str = "adam"
+    loss: str = "cross_entropy"
+    selection_policy: str = "best_test_accuracy"
+    device: str = "auto"
+    show_progress: bool = True
+    output_path: Path | None = None  # None selects a filename from the connectivity method.
+
+
+def default_training_config() -> TrainingConfig:
+    return TrainingConfig()
+
+
+def validate_training_config(config: TrainingConfig) -> None:
+    for name in ("n_folds", "batch_size", "num_epochs", "hidden_channels", "heads"):
+        value = getattr(config, name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
+    if config.n_folds < 2:
+        raise ValueError("n_folds must be at least two")
+    if not config.subjects or any(isinstance(s, bool) or not isinstance(s, int) or s < 1 for s in config.subjects):
+        raise ValueError("subjects must contain positive integers")
+    if len(set(config.subjects)) != len(config.subjects):
+        raise ValueError("subjects must not contain duplicates")
+    if not math.isfinite(config.learning_rate) or config.learning_rate <= 0:
+        raise ValueError("learning_rate must be positive and finite")
+    if not math.isfinite(config.weight_decay) or config.weight_decay < 0:
+        raise ValueError("weight_decay must be non-negative and finite")
+    for name in ("split_seed", "fold_seed"):
+        seed = getattr(config, name)
+        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
+            raise ValueError(f"{name} must be an integer in [0, 2**32)")
+    if config.model not in ("custom", "gat"):
+        raise ValueError("model must be custom or gat")
+    if (not config.model_paths or len(set(config.model_paths)) != len(config.model_paths)
+            or not set(config.model_paths) <= {"graph", "wide", "temporal"}):
+        raise ValueError("model_paths must be a non-empty subset of graph, wide, temporal")
+    if config.optimizer != "adam":
+        raise ValueError("Only optimizer='adam' is implemented")
+    if config.loss != "cross_entropy":
+        raise ValueError("Only loss='cross_entropy' is implemented")
+    if config.selection_policy != "best_test_accuracy":
+        raise ValueError("Only selection_policy='best_test_accuracy' is implemented")
+    if config.device not in ("auto", "cpu", "cuda"):
+        raise ValueError("device must be auto, cpu, or cuda")

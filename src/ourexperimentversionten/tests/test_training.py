@@ -1,183 +1,136 @@
-"""Training behavior checks against the original trainer and known outcomes."""
-from contextlib import redirect_stdout
+"""Evaluation, the seed ensemble, and the leave-one-subject-out run."""
 from dataclasses import replace
-import io
 import json
 from pathlib import Path
-import subprocess
-import sys
 import tempfile
 import unittest
-from unittest.mock import patch
 
-import numpy as np
 import torch
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-from dataset import default_dataset_config
-from fixture_data import write_subject
-from model.gat import GAT
-from train import experiment
-from train.config import default_training_config, validate_training_config
-from train.engine import evaluate, Evaluation
-from train.metrics import summarize_fold_scores, compute_classification_metrics
-from train.reporting import save_results
-from train.selection import initialize_selection, update_selection, finalize_selection
-from train.setup import seed_fold, build_model
-from train.splitting import make_fold_indices
-from train import train as cli
+from ..train import TrainConfig, run_loso, run_within, within_config
+from ..train.engine import Ensemble, evaluate
+from ..train.metrics import classification_metrics, summarize
+from ..train.run_loso import main
+from ..train.run_within import main as within_main
+from ..train.within import fold_indices
+from .fixture import CONFIG, write_recordings
+
+
+class Fixed(torch.nn.Module):
+    """Returns x as logits, plus a constant bias toward class 0."""
+
+    def __init__(self, bias=0.0):
+        super().__init__()
+        self.bias = torch.tensor([bias, 0.0])
+
+    def forward(self, x, edge_index, batch):
+        return x + self.bias
+
+
+def one_node_graphs(labels):
+    return [Data(x=torch.tensor([[0., 1.]] if label else [[1., 0.]]), y=torch.tensor(label),
+                 edge_index=torch.empty((2, 0), dtype=torch.long)) for label in labels]
 
 
 class TrainingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)
-        cls.temp = tempfile.TemporaryDirectory()
-        write_subject(cls.temp.name)
-        cls.dataset_config = default_dataset_config()
-        cls.training_config = replace(default_training_config(), subjects=(1,), n_folds=2,
-                                      num_epochs=3, show_progress=False, device='cpu')
+        cls.folder = tempfile.TemporaryDirectory()
+        write_recordings(cls.folder.name)
+        cls.config = TrainConfig(epochs=1, batch_size=8, ensemble=2, device="cpu", show_progress=False)
 
     @classmethod
     def tearDownClass(cls):
-        cls.temp.cleanup()
+        cls.folder.cleanup()
 
-    def test_original_training_equivalence(self):
-        expected = json.loads((Path(__file__).parent / 'fixtures/legacy_training.json').read_text())
-        legacy_config = replace(self.dataset_config, connectivity=replace(self.dataset_config.connectivity, method='plv'))
-        splits = [{'train': a.tolist(), 'test': b.tolist()}
-                  for a, b in make_fold_indices(list(range(12)), self.training_config)]
-        self.assertEqual(splits, expected['folds'])
-        observed = []
-        original_evaluate = experiment.evaluate
-        def capture(*args, **kwargs):
-            result = original_evaluate(*args, **kwargs)
-            observed.append(result.accuracy if isinstance(result, Evaluation) else result)
-            return result
-        with patch.object(experiment, 'evaluate', side_effect=capture):
-            actual = experiment.run_subject(self.temp.name, 1, torch.device('cpu'),
-                                              legacy_config, self.training_config)
-        np.testing.assert_allclose(observed, [score for epoch in expected['epochs']
-                                             for score in (epoch['train'], epoch['test'])], rtol=0, atol=0)
-        self.assertEqual({key: actual[key] for key in ('mean', 'max', 'min')}, expected['summary'])
-        self.assertEqual(sum(map(sum, actual['confusion_matrix'])), 12)
-        self.assertEqual(len(actual['folds']), 2)
-
-    def test_seed_and_initial_model_match_original(self):
-        torch.manual_seed(12345)
-        original = GAT(hidden_channels=22, heads=3, in_channels=8)
-        seed_fold(self.training_config.fold_seed)
-        actual = build_model(8, torch.device('cpu'), self.training_config)
-        for key, tensor in original.state_dict().items():
-            torch.testing.assert_close(actual.state_dict()[key], tensor, rtol=0, atol=0)
-
-    def test_selection_preserves_strict_improvement(self):
-        state = initialize_selection()
-        for epoch, (train_accuracy, test_accuracy) in enumerate([(1., .5), (.8, .75), (.9, .75), (1., .25)], start=1):
-            state = update_selection(state, epoch, train_accuracy, test_accuracy)
-        self.assertEqual(state.epoch, 2)
-        self.assertEqual(state.train_accuracy, .8)
-        self.assertEqual(finalize_selection(state), .75)
-        self.assertEqual(finalize_selection(update_selection(initialize_selection(), 1, 1., 0.)), 0.)
-
-    def test_existing_metrics_and_json(self):
-        summary = summarize_fold_scores([.25, .5, .75])
-        self.assertEqual(summary, {'mean': .5, 'max': .75, 'min': .25})
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'nested/results.json'
-            with redirect_stdout(io.StringIO()):
-                save_results({1: summary}, path)
-            self.assertEqual(json.loads(path.read_text()), {'1': summary})
+    def test_metrics(self):
+        metrics = classification_metrics([0, 0, 0, 1], [0, 0, 1, 1])
+        self.assertEqual(metrics["accuracy"], 0.75)
+        self.assertAlmostEqual(metrics["balanced_accuracy"], 5 / 6)
+        self.assertAlmostEqual(metrics["macro_f1"], 11 / 15)
+        self.assertEqual(metrics["confusion_matrix"], [[2, 1], [0, 1]])
+        summary = summarize({"1": metrics, "2": classification_metrics([0, 1], [0, 1])})
+        self.assertEqual(summary["accuracy"], 0.875)
+        self.assertEqual(summary["confusion_matrix"], [[3, 1], [0, 2]])
         with self.assertRaises(ValueError):
-            summarize_fold_scores([])
+            classification_metrics([], [])
 
-    def test_accuracy_weights_samples_not_batches(self):
-        class FixedModel(torch.nn.Module):
-            def forward(self, x, edge_index, batch):
-                return x  # Each graph has exactly one node with known logits.
-        graphs = [Data(x=torch.tensor([[2., 0.]]), y=torch.tensor(label),
-                       edge_index=torch.empty((2, 0), dtype=torch.long)) for label in (0, 0, 1)]
-        model = FixedModel()
-        accuracy = evaluate(model, DataLoader(graphs, batch_size=2), torch.device('cpu'))
-        self.assertEqual(accuracy, 2 / 3)
-        self.assertFalse(model.training)
+    def test_centring_removes_a_subject_wide_bias_without_labels(self):
+        loader = DataLoader(one_node_graphs([0, 1, 0, 1]), batch_size=3)
+        labels, biased = evaluate(Fixed(bias=5.0), loader, torch.device("cpu"), center_logits=False)
+        self.assertEqual((labels, biased), ([0, 1, 0, 1], [0, 0, 0, 0]))
+        _, centred = evaluate(Fixed(bias=5.0), loader, torch.device("cpu"), center_logits=True)
+        self.assertEqual(centred, [0, 1, 0, 1])
 
-    def test_cli_runs_experiment_and_saves_original_schema(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'result.json'
-            config = replace(self.training_config, num_epochs=1)
-            with patch.object(cli, 'default_training_config', return_value=config), redirect_stdout(io.StringIO()):
-                cli.main(['--data-dir', self.temp.name, '--output', str(path)])
-            results = json.loads(path.read_text())
-            self.assertEqual(set(results), {'1'})
-            self.assertEqual(set(results['1']), {'mean', 'max', 'min', 'balanced_accuracy', 'macro_f1', 'confusion_matrix', 'class_labels', 'folds'})
-            self.assertEqual(results['1']['class_labels'], [0, 1])
-            self.assertEqual(sum(map(sum, results['1']['confusion_matrix'])), 12)
+    def test_ensemble_averages_probabilities(self):
+        batch = next(iter(DataLoader(one_node_graphs([0, 1]), batch_size=2)))
+        members = [Fixed(0.0), Fixed(2.0), Fixed(-1.0)]
+        inputs = (batch.x, batch.edge_index, batch.batch)
+        expected = torch.stack([m(*inputs).softmax(-1) for m in members]).mean(0)
+        torch.testing.assert_close(Ensemble(members)(*inputs).exp(), expected)
 
-    def test_classification_metrics_known_predictions(self):
-        metrics = compute_classification_metrics([0, 0, 0, 1], [0, 0, 1, 1])
-        self.assertAlmostEqual(metrics['balanced_accuracy'], 5 / 6)
-        self.assertAlmostEqual(metrics['macro_f1'], 11 / 15)
-        self.assertEqual(metrics['confusion_matrix'], [[2, 1], [0, 1]])
-        absent = compute_classification_metrics([0, 0], [0, 0])
-        self.assertEqual(absent['confusion_matrix'], [[2, 0], [0, 0]])
-        self.assertEqual(absent['balanced_accuracy'], 1.)
-        self.assertEqual(absent['macro_f1'], .5)
+    def test_leave_one_subject_out_run(self):
+        result = run_loso(self.folder.name, CONFIG, self.config)
+        self.assertEqual(set(result["subjects"]), {"1", "2", "3"})
+        for fold in result["subjects"].values():
+            self.assertEqual((fold["training_trials"], fold["testing_trials"]), (16, 8))
+            self.assertEqual(sum(map(sum, fold["confusion_matrix"])), 8)
+        self.assertEqual(sum(map(sum, result["summary"]["confusion_matrix"])), 24)
+        self.assertEqual(result["train_config"]["ensemble"], 2)
+        self.assertTrue(result["unlabeled_test_subject_use"]["center_logits"])
+        # The same seed gives the same result; subsets of held-out subjects can be run.
+        again = run_loso(self.folder.name, CONFIG, self.config, held_out_subjects=(2,))
+        self.assertEqual(again["subjects"]["2"], result["subjects"]["2"])
         with self.assertRaises(ValueError):
-            compute_classification_metrics([], [])
-
-    def test_metrics_use_selected_epoch_and_keep_first_tie(self):
-        graphs = [Data(x=torch.zeros((1, 8)), y=torch.tensor(label),
-                       edge_index=torch.empty((2, 0), dtype=torch.long)) for label in (0, 0, 0, 1)]
-        evaluations = [
-            .5, Evaluation(.5, [0, 0, 0, 1], [0, 1, 1, 1]),
-            .8, Evaluation(.75, [0, 0, 0, 1], [0, 0, 1, 1]),
-            .9, Evaluation(.75, [0, 0, 0, 1], [0, 0, 0, 0]),
-        ]
-        with patch.object(experiment, 'train_epoch'), patch.object(experiment, 'evaluate', side_effect=evaluations) as evaluated:
-            result = experiment.run_fold(graphs, graphs, torch.device('cpu'), self.training_config, 1, 1)
-        self.assertEqual(evaluated.call_count, 6)
-        self.assertEqual(result['selected_epoch'], 2)
-        self.assertEqual(result['accuracy'], .75)
-        self.assertEqual(result['confusion_matrix'], [[2, 1], [0, 1]])
-        self.assertAlmostEqual(result['macro_f1'], 11 / 15)
-        self.assertAlmostEqual(result['balanced_accuracy'], 5 / 6)
-
-    def test_all_zero_accuracy_still_has_selected_metrics(self):
-        graph = Data(x=torch.zeros((1, 8)), y=torch.tensor(0), edge_index=torch.empty((2, 0), dtype=torch.long))
-        with patch.object(experiment, 'train_epoch'), patch.object(experiment, 'evaluate',
-                side_effect=[0., Evaluation(0., [0, 1], [1, 0])]):
-            result = experiment.run_fold([graph], [graph], torch.device('cpu'),
-                                         replace(self.training_config, num_epochs=1), 1, 1)
-        self.assertEqual(result['selected_epoch'], 1)
-        self.assertEqual(result['accuracy'], 0.)
-        self.assertEqual(result['balanced_accuracy'], 0.)
-        self.assertEqual(result['macro_f1'], 0.)
-        self.assertEqual(result['confusion_matrix'], [[0, 1], [1, 0]])
-
-    def test_invalid_settings_and_insufficient_data(self):
-        for config in (replace(self.training_config, num_epochs=0),
-                       replace(self.training_config, n_folds=1),
-                       replace(self.training_config, learning_rate=-1),
-                       replace(self.training_config, selection_policy='new_metric')):
+            run_loso(self.folder.name, CONFIG, self.config, held_out_subjects=(9,))
+        for bad in (dict(epochs=0), dict(ensemble=0), dict(learning_rate=0.0), dict(device="gpu")):
             with self.assertRaises(ValueError):
-                validate_training_config(config)
-        with self.assertRaisesRegex(ValueError, 'at least 2 graphs'):
-            make_fold_indices([0], self.training_config)
-        with self.assertRaisesRegex(ValueError, 'Missing data files'):
-            cli.validate_input_files(self.temp.name, (2,))
-        self.assertEqual(default_training_config().num_epochs, 249)
-        self.assertEqual(default_dataset_config().graphs.threshold, .35)
+                replace(self.config, **bad).validate()
 
-    def test_repository_module_entry_point(self):
-        result = subprocess.run([sys.executable, '-m', 'src.ourexperimentversionten.train.train', '--help'],
-                                cwd=ROOT.parents[1], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('--data-dir', result.stdout)
+    def test_within_subject_folds_are_stratified_and_cover_every_trial_once(self):
+        labels = [0, 1] * 10
+        folds = fold_indices(labels, 5, 42)
+        self.assertEqual(sorted(int(i) for _, test in folds for i in test), list(range(20)))
+        for train, test in folds:
+            self.assertFalse(set(train) & set(test))
+            self.assertEqual(sum(labels[i] for i in test), 2)
+        self.assertTrue(all((a[1] == b[1]).all() for a, b in zip(folds, fold_indices(labels, 5, 42))))
+        with self.assertRaises(ValueError):
+            fold_indices(labels, 1, 42)
+
+    def test_within_subject_run(self):
+        defaults = within_config()
+        self.assertEqual((defaults.epochs, defaults.center_logits, defaults.ensemble), (60, False, 3))
+        config = within_config(epochs=1, batch_size=8, ensemble=1, device="cpu", show_progress=False)
+        result = run_within(self.folder.name, CONFIG, config, subjects=(1, 3), folds=2)
+        self.assertEqual(set(result["subjects"]), {"1", "3"})
+        for subject in result["subjects"].values():
+            self.assertEqual(len(subject["folds"]), 2)
+            self.assertEqual(sum(map(sum, subject["confusion_matrix"])), 8)       # every trial tested once
+            self.assertEqual([f["testing_trials"] for f in subject["folds"]], [4, 4])
+            self.assertEqual([f["training_trials"] for f in subject["folds"]], [4, 4])
+            correct = subject["confusion_matrix"][0][0] + subject["confusion_matrix"][1][1]
+            self.assertAlmostEqual(subject["accuracy"], correct / 8)
+        self.assertFalse(result["train_config"]["center_logits"])
+        self.assertEqual(result["protocol"], "within_subject_cross_validation")
+        with self.assertRaises(ValueError):
+            run_within(self.folder.name, CONFIG, config, subjects=(9,))
+
+    def test_within_command_line_reports_missing_recordings(self):
+        with tempfile.TemporaryDirectory() as folder:
+            write_recordings(folder, subjects=(1,))
+            output = Path(folder) / "within.json"
+            with self.assertRaises(SystemExit):   # the default subjects are not all present
+                within_main(["--data-dir", folder, "--output", str(output), "--device", "cpu", "--quiet"])
+            self.assertFalse(output.exists())
+
+    def test_command_line_reports_missing_recordings(self):
+        with tempfile.TemporaryDirectory() as empty, self.assertRaises(SystemExit):
+            main(["--data-dir", empty, "--output", str(Path(empty) / "result.json"), "--device", "cpu", "--quiet"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -1,268 +1,257 @@
-# Version ten: standalone EEG experiment -- this one is baseline for py script project with bci-iv-plv
+# Version ten: the GATv2 baseline on PLV graphs
 
-This folder contains its own dataset preprocessing, GATv2 model, and training
-script. You can copy it outside this repository; no other experiment or Git
-checkout is required. Python 3.10 or newer is required.
+Version ten is the baseline for left-hand versus right-hand motor imagery on
+BCI Competition IV 2a: a three-layer GATv2 classifier on a graph of electrodes
+connected where their phase-locking value (PLV) is above 0.35.
 
-From this folder, install the dependencies and run:
+This is the corrected version. The model and the graph rule are the original
+ones. The data processing and the training and evaluation were fixed using
+what versions 18 to 23 established, and unused code was removed.
+
+| Experiment | Result | Chance |
+| --- | ---: | ---: |
+| Leave one subject out (LOSO), mean of five seeds | **0.535** | 0.5 |
+| Within subject, 10-fold, one seed | **0.549** | 0.5 |
+
+For comparison, version 23 scores 0.790 and 0.800 with the same trials, the
+same signal processing and the same training and evaluation; only the model
+and what the graph carries differ.
+
+**The 74.4% previously reported for this version was not real.** See
+[What was wrong before](#what-was-wrong-before).
+
+Contents:
+
+1. [Run it](#1-run-it)
+2. [Code map](#2-code-map)
+3. [The pipeline](#3-the-pipeline)
+4. [Results](#4-results)
+5. [What was wrong before](#what-was-wrong-before)
+6. [What was kept, changed and removed](#6-what-was-kept-changed-and-removed)
+7. [How to read the numbers](#7-how-to-read-the-numbers)
+
+## 1. Run it
+
+Use Python 3.10 or newer. From the repository root:
 
 ```bash
-python -m pip install -r requirements.txt
-python train/train.py --data-dir /path/to/bci-competition-iv-data-sets-2a
+source .venv/bin/activate
+python -m pip install -r src/ourexperimentversionten/requirements.txt
+
+RAW=/workspaces/datadisk/databci/eegdata/kaggle/bci-competition-iv-data-sets-2a
+OUT=/workspaces/datadisk/databci/bciupperlimbactionexperiment/ourexpv10/outputs
+
+# Leave one subject out, about 4 minutes
+python -u -m src.ourexperimentversionten.train.run_loso \
+  --data-dir "$RAW" \
+  --output "$OUT/Version10Fixed_LOSO_seed12345.json" 2>&1 | tee "$OUT/Version10Fixed_LOSO_seed12345.log"
+
+# Within subject, about 15 minutes
+python -u -m src.ourexperimentversionten.train.run_within \
+  --data-dir "$RAW" \
+  --output "$OUT/Version10Fixed_Within_seed12345.json" 2>&1 | tee "$OUT/Version10Fixed_Within_seed12345.log"
 ```
 
-The data directory must contain the BCI Competition IV 2a MATLAB training files
-`A01T.mat`, `A02T.mat`, `A03T.mat`, `A05T.mat`, `A06T.mat`, `A07T.mat`,
-`A08T.mat`, and `A09T.mat`, with the `data` structure expected by the loader.
-Data is supplied separately and is not downloaded automatically.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--data-dir` | required | Folder with the `A0xT.mat` recordings |
+| `--output` | timestamped file in `./outputs` | Result JSON |
+| `--seed` | 12345 | Seed of the first model of each fold |
+| `--subjects` | all configured | Subjects to run (held-out subjects for LOSO) |
+| `--all-subjects` | off | Use all nine subjects; the default leaves out subject 4 |
+| `--device` | `auto` | `auto`, `cpu` or `cuda` |
+| `--quiet` | off | Hide the progress bars |
+| `--folds`, `--split-seed`, `--epochs` | 10, 42, 60 | Within-subject run only |
 
-Without `--data-dir`, the script checks `data/bci-competition-iv-data-sets-2a`
-inside this folder, then `/kaggle/input/bci-competition-iv-data-sets-2a`, then
-the existing repository's `data/kaggle/bci-competition-iv-data-sets-2a` location
-when this folder is under `src/`. Paths do not depend on your working directory.
-
-Results default to `output/BCI_IV_2a_GAT_COHERENCE_Results.json` for coherence.
-Other methods use the same pattern with `PLV`, `PLI`, or `WPLI` inside this folder.
-The filename follows `ConnectivityConfig.method` automatically.
-Use `--output /path/to/results.json` to choose another destination.
-
-From the repository root, module execution is also supported:
+Tests (CPU only, a few seconds, no real data needed):
 
 ```bash
-python -m src.ourexperimentversionten.train.train --data-dir /path/to/data
+python -m unittest discover -s src/ourexperimentversionten/tests -t .
 ```
 
-The experiment uses the original training settings:
-subjects 1–3 and 5–9, 10-fold cross-validation, batch size 32, and
-`num_epochs=249` (the original `range(1, 250)` executed 249 epochs per fold).
-CUDA is used when available.
-Run `python train/train.py --help` for path options.
+## 2. Code map
 
-## Dataset modules and rule ownership
+About 900 lines, tests included (about 1,900 before).
 
-| Module | Rules and main functions |
+| File | Content |
 | --- | --- |
-| `dataset/config.py` | Immutable stage settings in `DatasetConfig`; `default_dataset_config()` |
-| `dataset/data_io.py` | Search locations, filenames, MATLAB decoding: `resolve_data_dir`, `subject_file_path`, `load_mat_file`, `read_sessions` |
-| `dataset/trials.py` | Sessions, channels, event offset, duration, incomplete trials, labels, ordering: `select_sessions`, `select_channels`, `event_to_sample`, `extract_trials`, `encode_label`, `order_trials` |
-| `dataset/preprocessing.py` | Butterworth SOS zero-phase filtering and time axis: `design_bandpass`, `apply_bandpass`, `preprocess_trial`; optional `pad_trials` |
-| `dataset/connectivity.py` | PLV/PLI/WPLI and band-averaged coherence: `extract_phase`, `compute_plv_matrix`, `compute_pli_matrix`, `compute_wpli_matrix`, `compute_coherence_matrix`, `compute_connectivity` |
-| `dataset/features.py` | Band ranges, per-band filtering, Welch parameters, Simpson integration: `make_band_ranges`, `compute_psd`, `integrate_bandpower`, `compute_node_features` |
-| `dataset/graphs.py` | Threshold comparison, self-loops, edge direction/weights, tensor types: `make_edge_mask`, `connectivity_to_edges`, `make_pyg_graph` |
-| `dataset/validation.py` | Boundary checks: `validate_config`, `validate_session`, `validate_trial`, `validate_graph` |
-| `dataset/dataset.py` | Execution order: `build_trial_graph`, `build_subject_dataset` |
+| [data/config.py](data/config.py) | `DataConfig`: every rule that turns a recording into graphs |
+| [data/recordings.py](data/recordings.py) | Read the MATLAB files and cut out the left/right trials |
+| [data/signal.py](data/signal.py) | Band-pass filter, analysed window, per-subject Euclidean alignment |
+| [data/graph.py](data/graph.py) | Log band powers, PLV, the thresholded graph |
+| [model/gat.py](model/gat.py) | The GATv2 classifier, unchanged |
+| [train/config.py](train/config.py) | `TrainConfig`: model width, schedule, optimiser, seeds, evaluation |
+| [train/engine.py](train/engine.py) | One training epoch, the seed ensemble, evaluation |
+| [train/loso.py](train/loso.py) | The leave-one-subject-out loop |
+| [train/within.py](train/within.py) | The within-subject cross-validation loop |
+| [train/metrics.py](train/metrics.py) | Accuracy, balanced accuracy, macro F1, confusion matrix |
+| [train/run_loso.py](train/run_loso.py), [train/run_within.py](train/run_within.py) | Command-line entry points |
+| [tests/](tests/) | 14 tests on a small synthetic recording |
 
-The training pipeline calls `build_subject_dataset()` and derives the model input
-feature count from its graphs. Dataset defaults live in `dataset/config.py`;
-training defaults live in `train/config.py`. Both configurations are passed
-explicitly into the experiment functions.
-The old monolithic helper API is replaced by the functions in the table above.
+`data/recordings.py`, `data/signal.py`, `train/metrics.py` and the training
+loops are the same as in version 23, so the two versions differ only in the
+model and in the graph.
 
-To change rules without changing their implementations, use `dataclasses.replace`:
+## 3. The pipeline
 
-```python
-from dataclasses import replace
-from dataset import build_subject_dataset, default_dataset_config
+### Trials
 
-config = default_dataset_config()
-config = replace(
-    config,
-    trials=replace(config.trials, channel_indices=(0, 1, 2), order="interleave"),
-    features=replace(config.features, band_edges=(8, 12, 16, 20)),
-    graphs=replace(config.graphs, mode="threshold", threshold=0.5),
-)
-graphs = build_subject_dataset("/path/to/data", 1, config)
-```
-
-Each `Trial` carries `[samples, channels]` signals, its target label, subject,
-session, and trial IDs. Graphs retain these IDs, with `x` shaped
-`[channels, bands]`, `edge_index` shaped `[2, edges]`, and a scalar integer `y`.
-The loader extracts equal-duration trials, so the pipeline no longer needs the
-original class-wise padding or duplicated band arrays. `pad_trials()` is available
-for callers handling variable-duration trials; it is not applied automatically.
-
-### Preserved defaults and optional rule changes
-
-- Sessions 3–8, channels 0–21, source classes 1/2 mapped to 0/1, 250 Hz,
-  four-second trials, and event offset zero remain the defaults. Event index
-  conventions have not been changed or reinterpreted.
-- Every feature band still receives the initial 8–30 Hz filtering first.
-- The default graph threshold is `0.35`, configured in `dataset/config.py`.
-- `graphs.mode="legacy"` preserves the original strict adjacency threshold,
-  followed by `>=` selection and `(0, 0)` placeholders for rejected entries.
-  Threshold zero therefore includes all node pairs and the diagonal. Custom
-  comparison, self-loop, and direction settings require `mode="threshold"`.
-- `graphs.mode="threshold"` omits rejected edges. `comparison="gt"` or `"ge"`
-  selects the comparison; `self_loops` allows qualifying diagonal entries.
-  Undirected graphs emit both edge orientations. `include_edge_weights=True`
-  attaches weights to the data, but the current GAT does not consume them.
-- `trials.order="legacy_interleave"` preserves the original half-split ordering,
-  including dropping the final item for odd totals. `"interleave"` instead
-  alternates actual class groups and retains all trials; `"grouped"` retains
-  the class-grouped extraction order.
-- The dataset supports configurable label mappings. The current trainer/model
-  is binary and rejects mappings with other than two targets.
-
-### Verification
-
-From this folder:
-
-```bash
-python -m unittest discover -s tests -v
-```
-
-The regression fixture compares features, labels, and edge indices against
-outputs captured from the original pipeline before the refactor, at thresholds
-0 and 0.1. Additional checks cover configurable channels/bands, trial rules,
-unequal class counts, graph selection, model backpropagation, and standalone CLI
-execution. Full experiment training is not required by these checks.
-
-
-## Training modules and rule ownership
-
-| Module | Rules and functions |
+| Rule | Value |
 | --- | --- |
-| `train/config.py` | Subjects, folds, seeds, batches, learning rate, epochs, model settings, device, output: `TrainingConfig`, `default_training_config`, `validate_training_config` |
-| `train/setup.py` | Device and initialization, GAT construction, Adam, cross-entropy: `select_device`, `seed_fold`, `build_model`, `build_optimizer`, `build_criterion` |
-| `train/splitting.py` | KFold partitions and batch loaders: `make_fold_indices`, `select_fold_data`, `build_loaders` |
-| `train/engine.py` | Gradient updates, accuracy, and optional prediction collection: `train_epoch`, `evaluate` |
-| `train/selection.py` | Highest test accuracy with strict improvement: `initialize_selection`, `update_selection`, `finalize_selection` |
-| `train/metrics.py` | Classification metrics and fold summaries: `compute_classification_metrics`, `summarize_fold_scores`, `summarize_fold_results` |
-| `train/experiment.py` | Execution order: `run_fold`, `run_subject`, `run_experiment` |
-| `train/reporting.py` | Console output and JSON saving: `print_subject_result`, `print_summary`, `save_results` |
-| `train/train.py` | CLI and input-file checks: `parse_args`, `validate_input_files`, `main` |
+| Subjects | 1, 2, 3, 5, 6, 7, 8, 9 by default; `--all-subjects` adds subject 4 |
+| Sessions | Every session that contains trials: the six motor-imagery runs |
+| Channels | The first 22 (EEG) |
+| Classes | Label 1 becomes 0 (left hand), label 2 becomes 1 (right hand) |
+| Trial | 4 seconds from the trial start at 250 Hz; the cue appears after 2 seconds |
+| Count | 144 trials per subject, 72 per class |
 
-The default loop executes exactly `num_epochs` iterations. Its default 249
-preserves the old loop's behavior. Split shuffling (seed 42), the fold seed reset
-(12345), nonshuffled loaders, batch size 32, Adam at 0.001, and per-epoch train/test
-accuracy evaluation are unchanged. Epoch selection still uses the highest test
-accuracy and keeps the earlier selection on ties; it does not save model weights.
-The unused average of train/test accuracy has been removed. It never influenced
-epoch selection or saved results.
+### Signal
 
-Each subject retains the original top-level accuracy `mean`, `max`, and `min`.
-Additional results include balanced accuracy, macro F1, a confusion matrix, and
-per-fold details, described below. JSON serializes subject IDs as strings.
-The graph threshold remains 0.35 in the dataset configuration only.
+| Step | Rule |
+| --- | --- |
+| Filter | Fifth-order Butterworth band-pass, zero-phase, 8 to 30 Hz, on the whole trial |
+| Window | Seconds 2 to 4 of the filtered trial (500 samples), the part after the cue |
+| Align | For the node features only: every trial of a subject is multiplied by the inverse square root of that subject's mean covariance (Euclidean alignment). No labels are used |
 
-From this folder, a custom run can pass configurations without changing globals:
+### Graph
 
-```python
-from dataclasses import replace
-from dataset import default_dataset_config
-from train.config import default_training_config
-from train.experiment import run_experiment
-from train.reporting import print_summary, save_results, resolve_results_path
-from train.setup import select_device
+| Field | Shape | Content |
+| --- | --- | --- |
+| `x` | `[22, 6]` | Log band power of each electrode in 8-12, 12-16, 16-20, 20-24, 24-28, 28-32 Hz, from the aligned signal |
+| `edge_index` | `[2, E]` | Electrode pairs whose PLV in the window is above 0.35, in both directions, no self-loops |
+| `y` | scalar | 0 left hand, 1 right hand |
 
-training = replace(default_training_config(), subjects=(1,), n_folds=2, num_epochs=3)
-dataset = default_dataset_config()
-results = run_experiment(
-    data_dir="/path/to/data",
-    device=select_device(training.device),
-    dataset_config=dataset,
-    training_config=training,
-)
-print_summary(results)
-save_results(results, resolve_results_path(dataset.connectivity.method, training.output_path))
-```
+The PLV is computed on the signal of the physical electrodes, not on the
+aligned signal. Alignment decorrelates the channels, and on aligned signals
+only 2 to 11 of the 462 possible pairs pass the threshold. On the unaligned
+signal about 450 of 462 pass, as in the original version ten. The graph carries
+no edge weights; the model could not use them.
 
-The former `train.train.run_subject` function now lives in `train.experiment`
-and takes both configurations explicitly. The CLI commands above remain valid.
-To change optimizer, loss, or selection algorithms, extend the corresponding
-function and configuration validation; unsupported names raise an error.
+### Model
 
-Training checks compare fold indices, per-epoch accuracies, and mean/max/min
-against a CPU run captured before the training refactor (two folds, three epochs,
-threshold 0.35). Tests also cover initial parameters, tie handling, sample-weighted
-accuracy, CLI result saving, and standalone and repository module execution.
+`GAT` in [model/gat.py](model/gat.py), unchanged: three GATv2 layers with 22
+hidden channels and 3 heads, GraphNorm after each, mean pooling over the
+electrodes, dropout 0.5, and a linear layer to two classes.
 
+### Training and evaluation
 
-## Additional classification metrics
+| Setting | LOSO | Within subject |
+| --- | --- | --- |
+| Split | Train on seven subjects (1008 trials), test on the eighth (144) | Stratified 10-fold inside each subject, seed 42; about 130 training trials per fold |
+| Epochs | 20, fixed | 60, fixed |
+| Batches | 32, shuffled | 32, shuffled |
+| Optimiser | Adam, learning rate 0.001, weight decay 0.001 | Same |
+| Models per fold | 3, seeds `seed` to `seed + 2`, probabilities averaged | Same |
+| Logit centring | On: the held-out subject's mean logit is subtracted | Off |
+| Evaluation | Once, after the final epoch | Once per fold, after the final epoch |
 
-`sklearn.metrics` calculates balanced accuracy, macro F1, and the confusion
-matrix from all test predictions for the selected epoch of each fold. Predictions
-are collected during the existing test evaluation; there is no extra model pass.
-Selection still uses highest test accuracy, retaining the earlier epoch on ties.
-The first epoch supplies metrics even if every epoch has zero accuracy.
+Nothing is selected on test trials. The schedules are those of version 23;
+they were not re-tuned for this model.
 
-- Balanced accuracy averages recall across classes present in the fold's true
-  labels, following scikit-learn's definition. If a class is absent, it does not
-  contribute to this average.
-- Macro F1 uses fixed target labels `[0, 1]` and `zero_division=0`, so both classes
-  have equal weight and undefined class scores contribute zero.
-- Confusion matrices always have shape 2 by 2: rows are true labels and columns
-  are predicted labels. With the default mapping, 0 is left and 1 is right.
-- Balanced accuracy and macro F1 are summarized with an unweighted mean, maximum,
-  and minimum across folds, just like existing accuracy. The subject confusion
-  matrix is the **sum** of selected-epoch test matrices across folds; it counts
-  trials, not averaged percentages.
+## 4. Results
 
-Each subject's saved result has this structure:
+### LOSO, five seeds
 
-```text
-mean, max, min             existing selected test accuracy summary
-balanced_accuracy         {mean, max, min} across folds
-macro_f1                  {mean, max, min} across folds
-confusion_matrix          summed 2 by 2 counts
-class_labels              [0, 1]
-folds                     list of fold, selected_epoch, accuracy,
-                          balanced_accuracy, macro_f1, confusion_matrix
-```
+| Seed | 12345 | 100 | 200 | 300 | 400 | Mean |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Accuracy | 0.530 | 0.530 | 0.516 | 0.550 | 0.551 | **0.535** |
 
-Fold and epoch numbers start at 1. All metrics in a fold come from the same
-selected epoch; each metric is not independently maximized. These results retain
-the experiment's existing best-test-epoch selection protocol.
+Each run scores 1152 held-out trials. The standard deviation over seeds is
+0.015. The mean is a little above chance: about 3.5 points.
 
+### Per subject
 
-## Switching connectivity
+| Subject | LOSO, mean of five seeds | Within subject | Version 23 LOSO | Version 23 within subject |
+| --- | ---: | ---: | ---: | ---: |
+| S1 | 0.526 | 0.604 | 0.810 | 0.826 |
+| S2 | 0.514 | 0.569 | 0.708 | 0.764 |
+| S3 | 0.504 | 0.542 | 0.907 | 0.889 |
+| S5 | 0.522 | 0.535 | 0.686 | 0.646 |
+| S6 | 0.535 | 0.451 | 0.744 | 0.660 |
+| S7 | 0.546 | 0.521 | 0.664 | 0.701 |
+| S8 | 0.551 | 0.528 | 0.900 | 0.965 |
+| S9 | 0.582 | 0.646 | 0.903 | 0.951 |
+| **Mean** | **0.535** | **0.549** | **0.790** | **0.800** |
 
-`ConnectivityConfig.method` in `dataset/config.py` now defaults to `"coherence"`.
-Change it to `"plv"`, `"pli"`, or `"wpli"` to select another supported method.
-No trainer or model changes are required.
+The within-subject column is one run (seed 12345), 633 of 1152 trials correct.
+Result files: `Version10Fixed_LOSO_seed*.json` and
+`Version10Fixed_Within_seed12345.json` in
+`databci/bciupperlimbactionexperiment/ourexpv10/outputs/`.
 
-The existing PLI implementation computes
-`abs(mean(sign(sin(phase_difference))))` over time samples in each filtered
-trial, using Hilbert phases. This is an absolute, symmetric PLI matrix; the
-diagonal defaults to zero. It is not weighted PLI or directed PLI. See the
-[MNE discussion of PLI](https://mne.tools/mne-connectivity/stable/auto_examples/dpli_wpli_pli.html)
-for the sign-based definition; this pipeline averages Hilbert phase relationships
-within each trial rather than estimating cross-spectra across epochs.
+### Why the baseline stays near chance
 
-The graph threshold remains `0.35` and graph mode remains `"legacy"`. Changing
-connectivity methods changes values, so the threshold is not automatically calibrated
-to the new method. The historical regression fixtures explicitly select PLV;
-ordinary dataset and short training checks exercise the coherence default.
+With the data and the training now correct, what limits this version is what
+the model can see:
 
+- **The graph is almost the same for every trial.** About 450 of 462 pairs
+  pass the threshold whatever the class, so the edges carry almost no
+  information, and there are no edge weights.
+- **The model does not know which electrode is which.** It averages over the
+  electrodes at the end and has no electrode identity, so it cannot learn that
+  the left-right difference sits at particular electrodes.
+- **It never sees the signal over time**, only six band powers per electrode.
 
-### Coherence settings
+Version 23 addresses exactly these three points (edge values on every pair,
+an electrode embedding and an electrode-aware path, and a temporal encoder on
+the signals).
 
-`ConnectivityConfig` supplies these coherence-only defaults:
+## What was wrong before
 
-```python
-method: str = "coherence"
-fmin: float = 8.0
-fmax: float = 30.0
-nperseg: int = 256
-noverlap: int | None = None  # SciPy uses nperseg // 2.
-window: str = "hann"
-detrend: str = "constant"
-```
+The earlier version ten reported 74.44% within-subject accuracy. A check with
+its own training code on four subjects (PLV, 249 epochs, 10 folds):
 
-`dataset.py` passes `DatasetConfig.sample_rate` (250 Hz by default) to
-`compute_connectivity`. Coherence uses the existing filtered time-series signal,
-then averages magnitude-squared coherence equally over the frequency bins in
-`[fmin, fmax]`. It returns one symmetric matrix per trial with the configured
-diagonal (default zero). Thresholding remains in `graphs.py` at 0.35.
+| Labels | Best test epoch (as reported then) | Final epoch |
+| --- | ---: | ---: |
+| True | 0.743 | 0.518 |
+| Shuffled at random | 0.735 | 0.510 |
 
-Validation applies coherence settings only when coherence is selected. It checks
-the band against Nyquist, segment size and overlap, window and detrending rules,
-at least two complete Welch segments, and at least one frequency bin in the
-selected band. The estimator also checks the actual signal length and rejects
-constant channels or nonfinite estimates rather than silently generating edges
-from undefined values. PLV/PLI/WPLI dispatch remains available without a sampling
-rate argument; coherence requires it explicitly.
+Shuffled labels carry no information and still scored 0.735. The reported
+number came from choosing, for each fold, the epoch with the highest accuracy
+on that fold's 14 or 15 test trials. Scored at the final epoch the model was
+at chance. All six connectivity methods tried then (PLV, ciPLV, PLI, wPLI,
+coherence, consensus) landed between 0.713 and 0.744 for the same reason.
 
-Tests cover identical/independent signals, symmetry and range, comparison with
-SciPy for a custom sampling rate and band, invalid settings/signals, and the
-method-specific output filename. Full training is not part of these checks.
+The files in [output/](output/) are those earlier results. They are kept as a
+record and should not be used.
+
+Problems found in the earlier version, and what this version does:
+
+| Problem | Evidence | Now |
+| --- | --- | --- |
+| Best test epoch reported | The table above | Final epoch only; nothing selected on test trials |
+| Folds not stratified | Share of right-hand trials per test fold from 0.27 to 0.79 | Stratified folds |
+| Half of each trial is before the cue | CSP + LDA: 0.52 on seconds 0-2, 0.79 on seconds 2-4 | Seconds 2-4 only |
+| Raw band powers, different scale per subject | Up to 15 times between subjects | Per-subject alignment and log |
+| Two of eight bands empty | The 8-30 Hz filter leaves nothing above 32 Hz | Six bands to 32 Hz |
+| Rejected pairs stored as `(0, 0)` placeholder edges | About 35 per graph | Only real pairs are stored |
+| Training batches not shuffled | In LOSO a batch held one subject | Shuffled |
+| Default connectivity `rplv` called with wrong arguments | The electrode distance matrix received the number 0.0 | Removed; PLV only |
+| Results did not record their settings | A file could not be traced to its configuration | Every result file contains all settings |
+
+## 6. What was kept, changed and removed
+
+| | |
+| --- | --- |
+| **Kept unchanged** | The GATv2 model ([model/gat.py](model/gat.py)) with 22 hidden channels and 3 heads; the graph rule "PLV above 0.35"; subjects, sessions, channels and classes; the 8-30 Hz filter |
+| **Changed** | Analysed window, node features (aligned, log, six bands), fold splitting, epoch selection, schedule, shuffling, weight decay, three models per fold, logit centring in LOSO |
+| **Removed** | Connectivity methods other than PLV (ciPLV, PLI, wPLI, coherence, consensus, reliability-gated PLV); the legacy edge construction and trial interleaving; the best-epoch selection; the old trainers and their tests and fixtures; the `networkx` requirement |
+
+The previous code, including files that were not in git, is saved in
+`databci/bciupperlimbactionexperiment/ourexpv10/code_backup_20261007/`.
+
+## 7. How to read the numbers
+
+- **Unlabeled test-subject data is used in LOSO.** Alignment and logit
+  centring use the held-out subject's trials without their labels. In the
+  within-subject run, alignment uses all trials of the subject, including each
+  test fold's, without labels.
+- **Quote the five-seed mean for LOSO.** Single runs range from 0.516 to 0.551.
+- **The within-subject result is a single seed.** With 144 trials per subject,
+  one subject's accuracy has a noise of about 0.04.
+- **The settings were not tuned for this model.** The schedules and
+  regularisation are version 23's. A schedule tuned for GATv2 might move the
+  result slightly; the three limits listed under
+  [Why the baseline stays near chance](#why-the-baseline-stays-near-chance)
+  would remain.
+- **The comparison with version 23 is like for like** in trials, signal
+  processing, splits, seeds and evaluation.

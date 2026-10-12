@@ -49,6 +49,7 @@ data/interim/
 # Experiment outputs
 outputs/
 output/
+datasyn/
 results/
 runs/
 logs/

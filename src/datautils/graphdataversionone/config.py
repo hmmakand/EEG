@@ -3,8 +3,10 @@
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SOURCE_ROOT = REPO_ROOT / 'data/moabb/MNE-liu2024-data'
-OUTPUT_ROOT = REPO_ROOT / 'data/moabb/Graph-Liu2024-VersionOne'
+# Server path: SOURCE_ROOT = REPO_ROOT / 'data/moabb/MNE-liu2024-data'
+SOURCE_ROOT = Path("/workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data")
+# Server path: OUTPUT_ROOT = REPO_ROOT / 'data/moabb/Graph-Liu2024-VersionOne'
+OUTPUT_ROOT = Path("/workspaces/datadisk/databci/eegdata/moabb/Graph-Liu2024-VersionOne")
 SCHEMA_VERSION = 1
 CHANNEL_NAMES = (
     'FP1', 'FP2', 'Fz', 'F3', 'F4', 'F7', 'F8', 'FCz', 'FC3', 'FC4',

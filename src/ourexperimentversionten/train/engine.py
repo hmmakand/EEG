@@ -1,52 +1,51 @@
-"""One training epoch and the existing accuracy evaluation."""
-from dataclasses import dataclass
-from typing import Literal, overload
-
+"""One training epoch, the seed ensemble, and evaluation of a held-out subject."""
 import torch
+from torch import nn
+
+
+def predict(model, data):
+    return model(data.x, data.edge_index, data.batch)
 
 
 def train_epoch(model, loader, optimizer, criterion, device) -> None:
     model.train()
     for data in loader:
         data = data.to(device)
-        out = model(data.x, data.edge_index, data.batch)
-        loss = criterion(out, data.y)
+        loss = criterion(predict(model, data), data.y)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
 
-@dataclass(frozen=True)
-class Evaluation:
-    accuracy: float
-    labels: list[int]
-    predictions: list[int]
+class Ensemble(nn.Module):
+    """Average the class probabilities of independently trained models."""
+
+    def __init__(self, models):
+        super().__init__()
+        self.models = nn.ModuleList(models)
+
+    def forward(self, *inputs):
+        probabilities = torch.stack([model(*inputs).softmax(dim=-1) for model in self.models])
+        return probabilities.mean(dim=0).log()
 
 
-@overload
-def evaluate(model, loader, device, *, collect_predictions: Literal[False] = False) -> float: ...
+@torch.no_grad()
+def evaluate(model, loader, device, center_logits: bool):
+    """Return (labels, predictions) for every trial of the loader.
 
-
-@overload
-def evaluate(model, loader, device, *, collect_predictions: Literal[True]) -> Evaluation: ...
-
-
-def evaluate(model, loader, device, *, collect_predictions: bool = False) -> float | Evaluation:
+    `center_logits` subtracts the mean logit of the evaluated trials before
+    the decision. It removes a subject-wide bias toward one class without
+    using labels, and assumes the loader holds one subject.
+    """
     model.eval()
-    correct = 0
-    labels: list[int] = []
-    predictions: list[int] = []
-    sample_count = len(loader.dataset)
-    if sample_count == 0:
+    outputs, labels = [], []
+    for data in loader:
+        data = data.to(device)
+        outputs.append(predict(model, data))
+        labels.append(data.y)
+    if not outputs:
         raise ValueError("Cannot evaluate an empty dataset")
-    with torch.no_grad():
-        for data in loader:
-            data = data.to(device)
-            out = model(data.x, data.edge_index, data.batch)
-            pred = out.argmax(dim=1)
-            correct += int((pred == data.y).sum())
-            if collect_predictions:
-                labels.extend(data.y.detach().cpu().tolist())
-                predictions.extend(pred.detach().cpu().tolist())
-    accuracy = correct / sample_count
-    return Evaluation(accuracy, labels, predictions) if collect_predictions else accuracy
+    logits, labels = torch.cat(outputs), torch.cat(labels)
+    if center_logits:
+        logits = logits - logits.mean(dim=0, keepdim=True)
+    return labels.cpu().tolist(), logits.argmax(dim=1).cpu().tolist()

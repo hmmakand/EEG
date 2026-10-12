@@ -35,7 +35,8 @@ def resolve_data_dir() -> str:
     kaggle_input = Path("/kaggle/input/bci-competition-iv-data-sets-2a")
     if kaggle_input.exists():
         return str(kaggle_input)
-    return str(find_repo_root(Path.cwd()) / "data" / "kaggle" / "bci-competition-iv-data-sets-2a")
+    # Server path: return str(find_repo_root(Path.cwd()) / "data" / "kaggle" / "bci-competition-iv-data-sets-2a")
+    return str(Path("/workspaces/datadisk/databci/eegdata") / "kaggle" / "bci-competition-iv-data-sets-2a")
 
 
 def load_bci_competition_data(data_dir, subject_number):

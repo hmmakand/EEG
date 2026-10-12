@@ -1,0 +1,185 @@
+"""Run with python -m unittest discover -s tests from the experiment folder."""
+from dataclasses import replace
+from pathlib import Path
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+import numpy as np
+import torch
+from torch_geometric.data import Batch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from dataset import build_subject_dataset, default_dataset_config, legacy_dataset_config
+from dataset.config import GraphConfig
+from dataset.graphs import connectivity_to_edges
+from dataset.trials import Trial, order_trials, extract_trials
+from dataset.data_io import Session
+from dataset.validation import validate_config
+from model.gat import GAT
+from fixture_data import write_subject
+
+
+class DatasetTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        torch.set_num_threads(1)
+        cls.temp = tempfile.TemporaryDirectory()
+        write_subject(cls.temp.name)
+        cls.config = legacy_dataset_config()  # fixtures were captured with the legacy rules
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temp.cleanup()
+
+    def test_original_pipeline_equivalence(self):
+        with np.load(Path(__file__).parent / 'fixtures/legacy_expected.npz') as expected:
+            for name, threshold in [('zero', 0), ('positive', 0.1)]:
+                config = replace(self.config, graphs=replace(self.config.graphs, threshold=threshold),
+                                 connectivity=replace(self.config.connectivity, method="plv"))
+                graphs = build_subject_dataset(self.temp.name, 1, config)
+                np.testing.assert_allclose(np.stack([g.x.numpy() for g in graphs]), expected[name+'_x'], rtol=1e-6, atol=1e-9)
+                np.testing.assert_array_equal(np.stack([g.edge_index.numpy() for g in graphs]), expected[name+'_edges'])
+                np.testing.assert_array_equal([g.y.item() for g in graphs], expected[name+'_y'])
+                self.assertEqual([g.trial_id for g in graphs], [0, 1] * 6)
+
+    def test_configurable_features_and_training(self):
+        config = replace(self.config, features=replace(self.config.features, band_edges=(8, 12, 16)),
+                         trials=replace(self.config.trials, channel_indices=(0, 2, 4)))
+        graphs = build_subject_dataset(self.temp.name, 1, config)
+        batch = Batch.from_data_list(graphs[:2])
+        model = GAT(hidden_channels=4, heads=2, in_channels=graphs[0].num_node_features)
+        output = model(batch.x, batch.edge_index, batch.batch)
+        self.assertEqual(tuple(output.shape), (2, 2))
+        torch.nn.functional.cross_entropy(output, batch.y).backward()
+        self.assertEqual(tuple(graphs[0].x.shape), (3, 2))
+
+    def test_trainer_integration(self):
+        from train.config import default_training_config
+        from train.experiment import run_subject
+        training_config = replace(default_training_config(), n_folds=2, num_epochs=1, show_progress=False)
+        results = run_subject(self.temp.name, 1, torch.device('cpu'), self.config, training_config)
+        self.assertTrue({'mean', 'max', 'min', 'balanced_accuracy', 'macro_f1', 'confusion_matrix', 'folds'} <= set(results))
+        self.assertTrue(all(0 <= results[key] <= 1 for key in ('mean', 'max', 'min')))
+
+    def test_default_rules_post_cue_window_and_weighted_complete_graph(self):
+        config = default_dataset_config()
+        self.assertEqual(config.preprocessing.window_seconds, (2.0, 4.0))
+        graphs = build_subject_dataset(self.temp.name, 1, config)
+        graph = graphs[0]
+        self.assertEqual(tuple(graph.x.shape), (22, 6))
+        self.assertEqual(tuple(graph.edge_index.shape), (2, 22 * 21))
+        self.assertFalse((graph.edge_index[0] == graph.edge_index[1]).any())
+        self.assertEqual(tuple(graph.edge_weight.shape), (22 * 21,))
+        self.assertEqual(config.preprocessing.alignment, 'euclidean')
+        self.assertEqual(tuple(graph.edge_attr.shape), (22 * 21, 2))
+        self.assertTrue(((graph.edge_weight >= 0) & (graph.edge_weight <= 1)).all())
+        # The window changes the features relative to the whole trial.
+        whole = build_subject_dataset(self.temp.name, 1, replace(
+            config, preprocessing=replace(config.preprocessing, window_seconds=None)))
+        self.assertFalse(torch.allclose(whole[0].x, graph.x))
+        for window in ((3.0, 2.0), (0.0, 5.0), (1.0, 1.0)):
+            with self.assertRaises(ValueError):
+                validate_config(replace(config, preprocessing=replace(config.preprocessing, window_seconds=window)))
+
+    def test_alignment_edge_features_and_segments(self):
+        from dataset.alignment import align_trials
+        from dataset.data_io import load_mat_file, read_sessions, subject_file_path
+        from dataset.preprocessing import preprocess_trial
+        base = default_dataset_config()
+        config = replace(base,
+                         preprocessing=replace(base.preprocessing, alignment='euclidean'),
+                         features=replace(base.features, segments=2),
+                         connectivity=replace(base.connectivity, edge_features=('plv', 'covariance'),
+                                              covariance_bands=((8, 13), (13, 30))))
+        validate_config(config)
+        trials = extract_trials(read_sessions(load_mat_file(subject_file_path(self.temp.name, 1))), 1, 250, config.trials)
+        aligned = align_trials(trials, 250, config.preprocessing)
+        signals = [preprocess_trial(t, 250, config.preprocessing).signal for t in aligned]
+        mean_covariance = np.mean([s.T @ s / len(s) for s in signals], axis=0)
+        np.testing.assert_allclose(mean_covariance, np.eye(22), atol=1e-8)
+        self.assertEqual([t.label for t in aligned], [t.label for t in trials])
+        graph = build_subject_dataset(self.temp.name, 1, config)[0]
+        self.assertEqual(tuple(graph.x.shape), (22, 6 * 2))
+        self.assertEqual(tuple(graph.edge_attr.shape), (22 * 21, 3))
+        torch.testing.assert_close(graph.edge_attr[:, 0], graph.edge_weight)
+        # Covariance is symmetric: the feature of (i, j) equals that of (j, i).
+        dense = torch.zeros(22, 22, 3)
+        dense[graph.edge_index[0], graph.edge_index[1]] = graph.edge_attr
+        torch.testing.assert_close(dense, dense.transpose(0, 1))
+        for bad in (replace(config, preprocessing=replace(config.preprocessing, alignment='other')),
+                    replace(config, features=replace(config.features, segments=0)),
+                    replace(config, connectivity=replace(config.connectivity, edge_features=('coherence',))),
+                    replace(config, graphs=replace(config.graphs, mode='legacy'))):
+            with self.assertRaises(ValueError):
+                validate_config(bad)
+
+    def test_threshold_edges_and_legacy_placeholders(self):
+        matrix = np.array([[0, .5, .9], [.5, 0, .2], [.9, .2, 0]])
+        edges, weights = connectivity_to_edges(matrix, GraphConfig(mode='threshold', threshold=.5))
+        np.testing.assert_array_equal(edges.numpy(), [[0, 2], [2, 0]])
+        np.testing.assert_allclose(weights.numpy(), [.9, .9])
+        edges, _ = connectivity_to_edges(matrix, GraphConfig(threshold=.5))
+        self.assertEqual(edges.shape[1], 9)
+        self.assertEqual(int((edges == 0).all(dim=0).sum()), 7)
+        edges, _ = connectivity_to_edges(matrix, GraphConfig(mode='threshold', threshold=1))
+        self.assertEqual(tuple(edges.shape), (2, 0))
+
+    def test_unequal_class_ordering(self):
+        items = [Trial(np.ones((10, 2)), label, 1, 0, i) for i, label in enumerate([0, 0, 0, 1, 1])]
+        self.assertEqual([t.trial_id for t in order_trials(items, 'legacy_interleave')], [0, 2, 1, 3])
+        self.assertEqual([t.trial_id for t in order_trials(items, 'interleave')], [0, 3, 1, 4, 2])
+
+    def test_trial_selection_and_index_offset(self):
+        signal = np.arange(3000).reshape(1500, 2)
+        session = Session(signal, np.array([1, 1400]), np.array([2, 1]), 0)
+        config = replace(self.config.trials, session_indices=(0,), channel_indices=(1,), event_index_offset=-1)
+        trials = extract_trials([session], 7, 250, config)
+        self.assertEqual(len(trials), 1)
+        self.assertEqual(trials[0].label, 1)
+        np.testing.assert_array_equal(trials[0].signal[:, 0], signal[:1000, 1])
+        with self.assertRaisesRegex(ValueError, 'Incomplete trial'):
+            extract_trials([session], 7, 250, replace(config, incomplete_policy='error'))
+
+    def test_invalid_config(self):
+        for config in [replace(self.config, sample_rate=0),
+                       replace(self.config, features=replace(self.config.features, band_edges=(12, 8))),
+                       replace(self.config, graphs=replace(self.config.graphs, self_loops=True))]:
+            with self.assertRaises(ValueError):
+                validate_config(config)
+
+    def test_standalone_cli(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'copied_experiment'
+            shutil.copytree(ROOT, target, ignore=shutil.ignore_patterns('__pycache__', 'output', 'tests', 'datasyn', 'temp', 'data'))
+            env = dict(os.environ)
+            env.pop('PYTHONPATH', None)
+            for command in ([sys.executable, str(target / 'train/train.py'), '--help'],
+                            [sys.executable, '-m', 'train.train', '--help']):
+                result = subprocess.run(command, cwd=target, env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('--data-dir', result.stdout)
+            output = target / 'output' / 'smoke.json'
+            env['OMP_NUM_THREADS'] = '1'
+            env['MKL_NUM_THREADS'] = '1'
+            result = subprocess.run(
+                [sys.executable, str(target / 'train/train.py'),
+                 '--data-dir', self.temp.name, '--subjects', '1', '--folds', '2',
+                 '--epochs', '1', '--device', 'cpu', '--output', str(output)],
+                cwd=directory, env=env, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            results = json.loads(output.read_text())
+            self.assertEqual(set(results), {'1'})
+            self.assertEqual(len(results['1']['folds']), 2)
+            self.assertTrue(all(fold['selected_epoch'] == 1 for fold in results['1']['folds']))
+            self.assertEqual(sum(map(sum, results['1']['confusion_matrix'])), 12)
+
+
+if __name__ == '__main__':
+    unittest.main()

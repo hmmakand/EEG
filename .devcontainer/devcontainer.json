@@ -11,10 +11,13 @@
         "--gpus=all",
 		"--network=host"
     ],
+	"mounts": [
+    "source=/mnt/data,target=/workspaces/datadisk,type=bind"
+	],
 	"customizations": {
 		"vscode": {
 			"settings": {
-				"python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+				"python.defaultInterpreterPath": "/workspaces/EEG/.venv/bin/python"
 			}
 		}
 	}

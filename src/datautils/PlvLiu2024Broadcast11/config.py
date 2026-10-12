@@ -14,14 +14,14 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SOURCE_DIR = (
-    REPOSITORY_ROOT
-    / "data"
+    # Server path: REPOSITORY_ROOT / "data"
+    Path("/workspaces/datadisk/databci/eegdata")
     / "moabb"
     / "Preprocessed-Gamma-31-40-MNE-liu2024-data"
 )
 DEFAULT_OUTPUT_DIR = (
-    REPOSITORY_ROOT
-    / "data"
+    # Server path: REPOSITORY_ROOT / "data"
+    Path("/workspaces/datadisk/databci/eegdata")
     / "moabb"
     / "Graph-Gamma-PLV-Manuscript-31-40-11-liu2024-data"
 )

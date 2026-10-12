@@ -1,0 +1,48 @@
+"""Run the leave-one-subject-out experiment and save the result as JSON.
+
+    python -m src.ourexpv23.train.run_loso --data-dir /path/to/A0xT.mat/files --output result.json
+"""
+import argparse
+from dataclasses import replace
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+
+from ..data import ALL_SUBJECTS, DataConfig, subject_file
+from .config import TrainConfig
+from .loso import run_loso
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--data-dir", type=Path, required=True, help="Folder with A01T.mat ... A09T.mat")
+    parser.add_argument("--output", type=Path, help="Result JSON (default: timestamped file in ./outputs)")
+    parser.add_argument("--subjects", type=int, nargs="+", help="Held-out subjects to run (default: all configured)")
+    parser.add_argument("--all-subjects", action="store_true",
+                        help="Use all nine subjects; the default leaves out subject 4")
+    parser.add_argument("--seed", type=int, help="Seed of the first model of each fold (default: 12345)")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
+    parser.add_argument("--quiet", action="store_true", help="Hide the per-model progress bars")
+    args = parser.parse_args(argv)
+
+    data_config = DataConfig(subjects=ALL_SUBJECTS) if args.all_subjects else DataConfig()
+    overrides = {name: getattr(args, name) for name in ("seed", "device") if getattr(args, name) is not None}
+    config = replace(TrainConfig(), **overrides, show_progress=not args.quiet)
+    missing = [subject_file(args.data_dir, s).name for s in data_config.subjects
+               if not subject_file(args.data_dir, s).is_file()]
+    if missing:
+        parser.error(f"Missing recordings in {args.data_dir}: {', '.join(missing)}")
+    try:
+        result = run_loso(args.data_dir, data_config, config=config, held_out_subjects=args.subjects)
+    except ValueError as error:
+        parser.error(str(error))
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output = args.output or Path("outputs") / f"Version23_LOSO_seed{config.seed}_{stamp}.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(result, indent=2) + "\n")
+    print(f"Result saved to {output}")
+
+
+if __name__ == "__main__":
+    main()

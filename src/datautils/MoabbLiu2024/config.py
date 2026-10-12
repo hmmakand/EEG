@@ -5,7 +5,8 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_DATA_ROOT = REPOSITORY_ROOT / "data" / "moabb"
+# Server path: DEFAULT_DATA_ROOT = REPOSITORY_ROOT / "data" / "moabb"
+DEFAULT_DATA_ROOT = Path("/workspaces/datadisk/databci/eegdata") / "moabb"
 # DEFAULT_L_FREQ = 8.0
 # DEFAULT_H_FREQ = 32.0
 DEFAULT_L_FREQ = 31.0
