@@ -1,7 +1,7 @@
 """Recordings -> aligned trials -> graphs."""
 import torch
 
-from .config import (BCI2A_ALL_SUBJECTS, DATASETS, JIA2019_SUBJECTS, jia2019_config, LIU2024_ALL_SUBJECTS, LIU2024_DUPLICATES, LIU2024_SUBJECTS, DataConfig, bci2a_config, dataset_config,
+from .config import (BCI2A_ALL_SUBJECTS, DATASETS, JIA2019_SUBJECTS, jia2019_config, LIU2024_ALL_SUBJECTS, LIU2024_DUPLICATES, LIU2024_IMAGERY_REST_EXCLUDED, LIU2024_SUBJECTS, DataConfig, bci2a_config, dataset_config,
                      liu2024_config)
 from .graph import build_graph
 from .recordings import Trial, read_trials, subject_file
@@ -25,6 +25,6 @@ def build_subject_graphs(data_dir, subject: int, config: DataConfig):
 
 
 __all__ = ["DataConfig", "DATASETS", "BCI2A_ALL_SUBJECTS", "LIU2024_SUBJECTS", "LIU2024_ALL_SUBJECTS",
-           "LIU2024_DUPLICATES", "liu2024_config", "bci2a_config", "jia2019_config", "JIA2019_SUBJECTS",
+           "LIU2024_DUPLICATES", "LIU2024_IMAGERY_REST_EXCLUDED", "liu2024_config", "bci2a_config", "jia2019_config", "JIA2019_SUBJECTS",
            "dataset_config", "Trial", "read_trials", "subject_file", "align_subject", "build_graph",
            "build_subject_graphs"]

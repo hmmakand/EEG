@@ -7,10 +7,11 @@ import unittest
 import numpy as np
 
 from ..data import LIU2024_DUPLICATES, build_subject_graphs, liu2024_config, read_trials, subject_file
-from ..data.liu2024 import EEG_CHANNELS, cut_trials, read_labels, read_recording
+from ..data import bci2a_config
+from ..data.liu2024 import EEG_CHANNELS, cut_trials, imagery_and_rest, read_labels, read_recording
 from ..data.signal import analysed_signal
 
-CONFIG = liu2024_config()
+CONFIG = liu2024_config(task="left_right")
 # Set LIU2024_DATA to another location to run the checks on the real recordings there.
 REAL_DATA = Path(os.environ.get("LIU2024_DATA", "/workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data"))
 
@@ -56,6 +57,20 @@ class Liu2024Tests(unittest.TestCase):
             np.testing.assert_array_equal(trial.signal, eeg[4000 * number:4000 * (number + 1):2])
         # The analysed window is the 4 s that follow the trial's own onset.
         self.assertEqual([analysed_signal(t, CONFIG).shape for t in trials], [(1000, 29)] * 3)
+
+    def test_imagery_against_rest(self):
+        config = liu2024_config(task="imagery_rest")
+        self.assertEqual((config.window_offsets, config.window_samples), ((0, 475), 475))
+        eeg, marker = recording([1004, 1, 1830], np.random.default_rng(0))     # usual, early and late imagery
+        trials = imagery_and_rest(cut_trials(eeg, marker, [0, 1, 0], 5, config), config)
+        # The late trial's break does not fit into the epoch: it gives no sample.
+        self.assertEqual([(t.trial_id, t.label, t.onset) for t in trials],
+                         [(0, 1, 502 + 250), (1, 0, 502 + 1000), (2, 1, 250), (3, 0, 1000)])
+        self.assertEqual([analysed_signal(t, config).shape for t in trials], [(475, 29)] * 4)
+        with self.assertRaises(ValueError):          # the task belongs to liu2024
+            bci2a_config(task="imagery_rest")
+        with self.assertRaises(ValueError):
+            liu2024_config(task="other")
 
     def test_malformed_recordings_are_rejected(self):
         eeg, marker = recording([1004, 1004], np.random.default_rng(0))

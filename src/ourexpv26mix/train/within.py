@@ -18,7 +18,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold
 import torch
 
-from ..data import DataConfig, build_subject_graphs
+from ..data import DataConfig, build_subject_graphs, liu2024_config
 from ..model import ModelConfig
 from .config import TrainConfig
 from .loso import EVALUATION, PACKAGES, run_fold, select_device
@@ -67,10 +67,11 @@ def run_subject(graphs, subject: int, model_config: ModelConfig, config: TrainCo
                 folds=fold_results)
 
 
-def run_within(data_dir, data_config: DataConfig = DataConfig(), model_config: ModelConfig | None = None,
+def run_within(data_dir, data_config: DataConfig | None = None, model_config: ModelConfig | None = None,
                config: TrainConfig | None = None, subjects=None, folds: int = 10, split_seed: int = 42) -> dict:
     """Cross-validate every subject in `subjects` (default: all) separately."""
     config = config or within_config()
+    data_config = data_config or liu2024_config()
     config.validate()
     if config.target_calibration:
         raise ValueError("Target calibration is defined for leave one subject out only")

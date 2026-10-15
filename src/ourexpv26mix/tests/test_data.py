@@ -34,12 +34,17 @@ class DataTests(unittest.TestCase):
         self.assertIsNone(config.session_indices)
         self.assertEqual((config.num_channels, config.trial_samples, config.window_offsets, config.window_samples),
                          (22, 1000, (0, 500), 500))
-        liu = liu2024_config()
+        default = liu2024_config()                                   # imagery against rest
+        self.assertEqual((default.task, default.window_samples, len(default.subjects)), ("imagery_rest", 475, 46))
+        self.assertEqual(set(range(1, 51)) - set(default.subjects), {5, 6, 15, 49})
+        self.assertEqual(dataset_config("liu2024"), default)
+        liu = liu2024_config(task="left_right")
         self.assertEqual(liu, DataConfig())
         self.assertEqual((liu.num_channels, liu.trial_samples, liu.window_offsets, liu.window_samples),
                          (29, 2000, (0, 1000), 1000))
         self.assertEqual((len(liu.subjects), set(range(1, 51)) - set(liu.subjects)), (47, {5, 15, 49}))
         self.assertEqual(liu2024_config(all_subjects=True).subjects, tuple(range(1, 51)))
+        self.assertEqual(liu2024_config(task="left_right", all_subjects=True).subjects, tuple(range(1, 51)))
         self.assertEqual(dataset_config("bci2a", window_seconds=(0.5, 2.0)).window_offsets, (125, 500))
         for bad in (dict(dataset="other"), dict(subjects=()), dict(subjects=(1, 1)), dict(window_seconds=(2.0, 2.0))):
             with self.assertRaises(ValueError):

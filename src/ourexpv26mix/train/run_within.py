@@ -38,12 +38,16 @@ def main(argv=None):
                         help="Control run: permute the training labels, so that nothing can be learned")
     parser.add_argument("--exclude-subjects", type=int, nargs="+", default=(), metavar="SUBJECT",
                         help="Leave these subjects out of the experiment entirely (training and testing)")
+    parser.add_argument("--task", choices=("left-right", "imagery-rest"),
+                        help="What is classified. imagery-rest: imagery against the break after it, the default "
+                             "for liu2024. left-right: the imagined hand, the default for bci2a and jia2019")
     parser.add_argument("--tangent-features", action="store_true",
                         help="Add the logarithm of the trial's covariance (tangent space) to the node and edge features")
     parser.add_argument("--low-frequency", action="store_true",
-                        help="Add a path that classifies from the 0.5-4 Hz potentials")
+                        help="Add a path that classifies from the 0.5-4 Hz potentials. Not valid for a motor-imagery "
+                             "result on bci2a: there this band reflects eye movements toward the arrow cue (README, 10)")
     parser.add_argument("--window", type=float, nargs=2, metavar=("START", "STOP"),
-                        help="Analysed window in seconds from the imagery onset (default: 0 4 for liu2024, 0 3.5 for jia2019, 0 2 for bci2a)")
+                        help="Analysed window in seconds from the imagery onset (default: 0 1.9 for liu2024 imagery-rest, 0 4 for liu2024 left-right, 0 3.5 for jia2019, 0 2 for bci2a)")
     parser.add_argument("--folds", type=int, default=10, help="Folds per subject (default: 10)")
     parser.add_argument("--split-seed", type=int, default=42, help="Seed of the fold split (default: 42)")
     parser.add_argument("--epochs", type=int, help=f"Epochs per model (default: {WITHIN_DEFAULTS['epochs']})")
@@ -55,6 +59,8 @@ def main(argv=None):
     if args.all_subjects and args.dataset == "jia2019":
         parser.error("--all-subjects does not apply to jia2019; all 15 subjects are used")
     options = dict(all_subjects=True) if args.all_subjects else {}
+    if args.task:
+        options["task"] = args.task.replace("-", "_")
     if args.tangent_features:
         options["tangent_features"] = True
     if args.low_frequency:

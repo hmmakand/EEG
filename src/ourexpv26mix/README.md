@@ -1,4 +1,83 @@
-# Version twenty-six (mix): the starting point, a copy of version 24
+# Version twenty-six (mix)
+
+## The default experiment: imagery against rest in stroke patients, 71.2%
+
+Running version 26 without options gives the experiment with the best result
+for stroke rehabilitation so far.
+
+```bash
+cd /workspaces/EEG && source .venv/bin/activate
+LIU=/workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data
+OUT=/workspaces/datadisk/databci/bciupperlimbactionexperiment/ourexpv26mix/outputs
+
+python -u -m src.ourexpv26mix.train.run_loso --quiet --data-dir "$LIU" \
+  --output "$OUT/Version26Mix_ImageryRest_liu2024_LOSO_seed12345.json"
+```
+
+| Liu 2024, imagery against rest, leave one subject out, final epoch, seed 12345 | |
+|---|---:|
+| Accuracy | **71.24%** |
+| Macro F1 | 71.01% |
+| Correct samples | 2,606 of 3,660 |
+| Chance | 50% |
+| A linear classifier on the same samples (tangent space) | 69.3% |
+
+About 2.5 hours on a GTX 1060. Result file:
+`Version26Mix_ImageryRest_liu2024_LOSO_seed12345.json` in `$OUT`.
+
+### How the 71% is obtained
+
+1. **Data.** The Liu 2024 stroke dataset: 46 patients, 29 EEG electrodes.
+   Left out are the three duplicated recordings (5, 15, 49) and subject 6,
+   whose imagery starts so late that the break is cut off in all but one trial.
+2. **Two samples from every trial**, placed by the trial's own imagery onset:
+   - 1.9 s from the middle of the imagery (1.0 to 2.9 s after the onset),
+     labelled "imagery";
+   - 1.9 s of the break that follows (4.0 to 5.9 s after the onset), labelled
+     "rest".
+   Which hand was imagined is ignored. 1,830 trials give 3,660 samples.
+3. **Signal preparation.** Band-pass 8-30 Hz, then alignment of every
+   patient's signals to a common scale (Euclidean alignment; no labels).
+4. **Each sample becomes a graph.** The 29 electrodes are the nodes, with six
+   band powers each; every pair of electrodes is an edge with its phase-locking
+   value and covariance; the filtered signal itself is kept for the temporal
+   encoder.
+5. **Model.** The temporal encoder, the graph head with three hybrid blocks,
+   and the wide path; their outputs are added.
+6. **Training, leave one subject out.** Train on 45 patients, test on the one
+   left out, for each of the 46.
+   - 20 epochs, fixed in advance; Adam, learning rate 0.001, batch 32.
+   - Three models per patient with seeds 12345 to 12347; their probabilities
+     are averaged.
+   - Target calibration: in the second half of the training the model also
+     learns from the test patient's samples, with its own confident and
+     physiologically checked predictions as targets. The true labels of the
+     test patient are never used.
+7. **Scoring.** The prediction after the last epoch. No epoch is chosen with
+   test labels; the highest-test-epoch score (76.46%) is recorded for
+   comparison only.
+
+### What the result means
+
+The model tells, for a patient it has never seen, whether the patient is in
+the imagery period or in the break. During the imagery the patient watches a
+video of a grasping hand, and during the break a still picture. A linear
+classifier separates the two with the motor electrodes alone at 65.7%, with
+the occipital and parietal electrodes alone at 65.2%, and with the two EOG
+channels alone at 61.1%. The 71% therefore reflects imagery together with
+visual processing and eye activity, not motor imagery alone. Details are in
+section 12 below.
+
+### The other experiments of this version
+
+| Experiment | Command option | Result of the method (final epoch) |
+|---|---|---:|
+| Liu 2024, imagery against rest (the default) | none | 71.24% |
+| Liu 2024, left against right | `--task left-right` | 54.31% (seed 12345), at or near chance |
+| BCI IV 2a, left against right | `--dataset bci2a` | 78.47% with the current default of three hybrid blocks (seed 12345); 79.90% with `--layers 2` (five seeds) |
+| Jia 2019, left against right | `--dataset jia2019` | 47.75%; within-subject results are not valid there |
+
+## Where this version comes from
 
 Version twenty-six is a standalone copy of [version 24](../ourexpv24liu/README.md).
 It imports nothing from other versions. On Liu 2024 and BCI IV 2a it builds
@@ -18,7 +97,7 @@ construction and the training are those of version 23. What is new is the
 reader for the Liu 2024 files, [data/liu2024.py](data/liu2024.py), and the
 small changes that let the rest of the pipeline work with either dataset.
 
-| | Liu 2024 (`--dataset liu2024`, the default) | BCI Competition IV 2a (`--dataset bci2a`) |
+| Left-against-right experiments | Liu 2024 (`--dataset liu2024 --task left-right`) | BCI Competition IV 2a (`--dataset bci2a`) |
 |---|---|---|
 | Subjects | 47 acute stroke patients (50 published; 3 are duplicates) | 9 healthy subjects (8 by default) |
 | Task | Left-hand or right-hand grasp imagery | Left-hand or right-hand imagery |
@@ -392,7 +471,7 @@ The four figures lie within the spread between seeds of this configuration
 shown to be better. Depth is not what limits the graph head; two blocks are
 kept.
 
-### 8. The default configuration
+### 8. The default configuration of the model and the training
 
 **Since this section the default of leave-one-subject-out runs is: all three
 paths, band-power nodes, target calibration on** (and, since section 9, three
@@ -450,7 +529,7 @@ No gain for the graph head. Of EEGformer's three transformers, the one over
 electrodes is what the pair attention of the hybrid block already does; the one
 over the filters of an electrode was not built.
 
-### 10. Two new kinds of features (optional, not yet measured)
+### 10. Two new kinds of features (optional; measured, neither is adopted)
 
 - `--tangent-features`: the matrix logarithm of the trial's covariance. After
   alignment the subject's mean covariance is the identity, so this is the
@@ -483,10 +562,157 @@ $RUN --data-dir "$LIU" --low-frequency    --output "$OUT/Version26Mix_LowFrequen
 $RUN --data-dir "$LIU" --tangent-features --low-frequency --output "$OUT/Version26Mix_Tangent+LowFrequency_liu2024_LOSO_seed12345.json"
 ```
 
-Reference for these runs (the default, seed 12345): 78.47% on BCI IV 2a and
-54.31% on Liu 2024.
+Results, the method with its default settings plus the option, seed 12345,
+leave one subject out, final epoch:
 
-### 11. What works and what does not: the record so far
+| Option | BCI IV 2a | Liu 2024 |
+|---|---:|---:|
+| None (the default) | 78.47% | 54.31% |
+| `--tangent-features` | 79.60% | 51.33% |
+| `--low-frequency` | **86.28%** | 53.09% |
+| Both | 86.20% | 54.31% |
+
+**The 86% on BCI IV 2a is not motor imagery. It is mostly eye movement.**
+The cue of BCI IV 2a is an arrow pointing left or right, and the recording has
+three EOG channels that this pipeline does not use. A linear classifier
+(shrinkage LDA, leave one subject out, per-subject scaling) on the 0.5-4 Hz
+time courses of the 2 s after the cue gives:
+
+| Channels | Accuracy | Subjects 5, 6, 7 |
+|---|---:|---|
+| The 3 EOG channels alone | 77.8% | 97%, 78%, 93% |
+| All 22 EEG electrodes | 73.6% | 90%, 76%, 82% |
+| Central electrodes (C5 ... C6) | 57.1% | |
+| C3 and C4 | 56.2% | |
+| 22 EEG electrodes after regressing the EOG channels out | 71.5% | 76%, 75%, 72% |
+
+- The EOG channels alone predict the class better than the EEG does, and the
+  two outer EOG channels deflect in opposite directions in the first half
+  second after the cue: the eyes follow the arrow.
+- The subjects in which the low-frequency path gained most (5, 6 and 7: +23,
+  +13 and +22 points) are the ones in which the EOG channels alone reach 97%,
+  78% and 93%.
+- Over the motor cortex the low band carries little (56% to 57%).
+- After a linear regression of the EOG channels the EEG still gives 71.5%.
+  Three monopolar EOG channels do not remove eye movements completely, and
+  the response of the visual cortex to a left or right arrow is a second
+  class-dependent signal that is not imagery either. What remains has not
+  been shown to be motor-related.
+
+The same classifier on parts of the 2 s after the cue shows that the slow-band
+information exists only while the eyes move:
+
+| Window after the cue | EOG channels alone | 22 EEG electrodes | EEG, EOG regressed out |
+|---|---:|---:|---:|
+| 0.0-0.5 s | 79.7% | 75.7% | 73.6% |
+| 0.5-1.0 s | 67.2% | 57.5% | 61.5% |
+| 1.0-1.5 s | 61.8% | 53.8% | 53.3% |
+| 1.5-2.0 s | 55.7% | 50.0% | 52.8% |
+
+The EEG follows the EOG channels in time and falls to chance once the eyes are
+still, although the imagery continues. A motor-imagery signal would not end
+half a second after the cue.
+
+**The 8-30 Hz band is not affected in this way.** The same classifier on the
+8-30 Hz log power gives 68.4% for the 22 EEG electrodes as recorded and 72.2%
+after regressing the EOG channels out; the EOG channels alone give 66.7%. The
+results of this method in 8-30 Hz do not rest on eye movements.
+
+On Liu 2024 neither option helps (the cue there is a video of a grasping
+hand, not an arrow). `--tangent-features` gains one point on BCI IV 2a, within
+seed noise, and loses three on Liu 2024.
+
+Neither option is adopted. `--low-frequency` must not be used to report a
+motor-imagery result on BCI IV 2a.
+
+### 11. Screening of data preparations for Liu 2024 ([analysis/screen.py](analysis/screen.py))
+
+A shrinkage LDA, leave one subject out, on 6 bands x 4 windows x eye signal
+left in or regressed out x up to 4 kinds of features, with two controls: the
+same features from the EOG channels alone, and the whole grid with shuffled
+labels. No model is trained; about 30 minutes.
+
+```bash
+python -W ignore -m src.ourexpv26mix.analysis.screen --data-dir "$LIU" --output "$OUT/Screen_liu2024.json"
+python -W ignore -m src.ourexpv26mix.analysis.screen --dataset bci2a --data-dir "$BCI" --output "$OUT/Screen_bci2a.json"
+```
+
+| | Liu 2024 | BCI IV 2a |
+|---|---:|---:|
+| Best combination | 55.9% (4-40 Hz, 0-4 s, tangent, EOG regressed out) | 73.4% (8-30 Hz, 0.5-2 s, tangent, EOG regressed out) |
+| The setting of this version (8-30 Hz, full window, tangent) | 55.1% | 72.2% |
+| Best combination of a grid with shuffled labels | 53.5% on average, 54.3% at most | 54.2% on average |
+
+- **On Liu 2024 no preparation stands out.** The best of about 130
+  combinations is 55.9%, two points above what the best combination reaches
+  with shuffled labels, and less than one point above the current setting.
+  Band, window, baseline normalisation and removal of the eye signal do not
+  uncover a stronger left/right signal.
+- The EOG channels alone are at chance on Liu 2024 (44% to 53%), so the
+  left/right results there are not eye movement.
+- On BCI IV 2a the current band and window are confirmed, removing the eye
+  signal adds about one point, and the 1-4 Hz band shows the eye-movement
+  effect of section 10 (EOG alone 75.5%).
+
+Left against right in fixed parts of the 8 s trial of Liu 2024 (tangent
+features, 8-30 Hz): instruction 0-2 s 56.8%, imagery 2-6 s 54.6%, break
+6-8 s 54.6%, **the whole trial 0-8 s 51.6%**. Using the whole trial, as Zhang
+et al. (2026) do for stroke severity, does not help here: severity is a
+property of the patient and is present in every part of the recording, the
+imagined hand is not.
+
+### 12. A second task for Liu 2024: imagery against rest (`--task imagery-rest`)
+
+Two samples per trial, placed by the trial's own imagery onset: 1.9 s of the
+imagery starting 1 s after the onset (label 1) and 1.9 s of the break
+starting 4 s after the onset (label 0). The imagined hand is not used. A
+trial whose break does not fit into the epoch gives no sample: 1,831 of 1,880
+trials remain. Subject 6, whose imagery starts late in almost every trial,
+keeps 1 trial and is left out.
+
+**This task is the default experiment of the version** since this section:
+`--dataset liu2024` without `--task` runs it, with subject 6 left out. The run
+below was made with `--task imagery-rest --exclude-subjects 6`, which is the
+same configuration; `--task left-right` gives the experiment of the sections
+above.
+
+```bash
+python -u -m src.ourexpv26mix.train.run_loso --quiet --data-dir "$LIU" \
+  --output "$OUT/Version26Mix_ImageryRest_liu2024_LOSO_seed12345.json"
+```
+
+**Result of the method** (default settings: three blocks, all paths, target
+calibration; seed 12345; leave one subject out, 46 subjects, final epoch):
+
+| | Accuracy | Macro F1 | Correct samples |
+|---|---:|---:|---:|
+| Imagery against rest | **71.24%** | 71.01% | 2,606 of 3,660 |
+
+41 of the 46 subjects are at 60% or above and 29 at 70% or above; the range is
+49% to 89%. Rest is taken for imagery more often (644 samples) than imagery
+for rest (410). Target calibration gives a pseudo-label to 45% of a test
+subject's samples, 80% of them right. For comparison only, the
+highest-test-epoch score is 76.46%.
+
+What a linear classifier finds (tangent features, 8-30 Hz, leave one subject
+out, shuffled labels 50%):
+
+| Electrodes | Accuracy |
+|---|---:|
+| All 29 (the reference for the result above) | 69.3% |
+| Motor (FC3 FC4 C3 C4 Cz CP3 CP4 FCz) | 65.7% |
+| Occipital and parietal (O1 Oz O2 P3 P4 Pz T5 T6) | 65.2% |
+| Frontal (FP1 FP2 F7 F8 F3 F4 Fz) | 62.7% |
+| The two EOG channels alone (log power) | 61.1% |
+
+The signal is clear, unlike left against right. It is not specific to the
+motor cortex: during the imagery the patient watches a video and during the
+break a still picture, and the occipital electrodes and the EOG channels
+separate the two almost as well as the motor electrodes. The task therefore
+measures "engaged in the video-guided imagery" against "break", which is a
+mixture of imagery, visual processing and eye movement.
+
+### 13. What works and what does not: the record so far
 
 Leave one subject out, final epoch, unless stated. "BCI" is BCI IV 2a (eight
 subjects), "Liu" is Liu 2024 (47 subjects).
@@ -502,6 +728,7 @@ subjects), "Liu" is Liu 2024 (47 subjects).
 | Time-resolved learned node features (`timed`) | Graph head alone: 72.7% to 75.1% on BCI |
 | The signal-level graph step (`mixed`) | Graph head alone: 72.7% to 77.9% on BCI (five seeds), above CSP + LDA; 53.8% on Liu (three seeds), the highest figure there |
 | Leaving out the duplicated recordings of Liu 2024 | With them, six subjects score 98% to 100% by leakage |
+| Imagery against rest on Liu 2024 | 71.2% with the method, 69.3% with a linear classifier, 50% with shuffled labels; not specific to the motor cortex |
 
 **Does not work (no gain, or worse)**
 
@@ -514,9 +741,12 @@ subjects), "Liu" is Liu 2024 (47 subjects).
 | Three hybrid blocks in the full model | BCI: 78.5% against 81.0% on the same seed (Liu: 54.3% against 51.6%) |
 | Temporal transformer on the node features (EEGformer) | BCI: 77.9% with and without |
 | Multi-scale temporal filters, learned sparse electrode mask (ASA-STGCN) | Version 25, both datasets |
+| Tangent-space covariance as node and edge features | BCI 79.6% against 78.5% (noise); Liu 51.3% against 54.3% |
+| A path on the 0.5-4 Hz potentials | Liu: no gain. BCI: +7.8 points, but from eye movements following the arrow cue, so not valid |
 | Target calibration for the graph head alone | BCI: 77.7% against 77.9% |
 | Alignment by paralysed side | Version 25, Liu |
 | Leaving out the artefact subjects | Version 24, Liu: LOSO stays at chance |
+| Other bands, windows, baseline-normalised power, removal of the eye signal, the whole 8 s trial | Liu, linear classifier: best 55.9%, two points above the best of a shuffled grid |
 | Cropped training, temporal node and edge modes in the full model, adversarial, contrastive and Proxy-Anchor losses, test-time adaptation without the motor-area check, synthetic trials from diffusion models | Versions 20 to 22, BCI |
 | PLV-threshold graphs with GAT layers | Version 10: 53% to 56% |
 
@@ -528,6 +758,7 @@ subjects), "Liu" is Liu 2024 (47 subjects).
 | Liu 2024 has three duplicated recordings | sub-05 = sub-04, sub-15 = sub-11, sub-49 = sub-47; in the raw files too, with white noise added |
 | Jia 2019 within-subject results are not valid | The classes are in separate files and a classifier recognises the file: 94% to 96% within subject, 48% across subjects |
 | Best-test-epoch scoring and the duplicated pair explain mid-60s figures on Liu 2024 | This model reaches 64.6% under PA-TCNet's conditions and 53.7% without them |
+| On BCI IV 2a the 0.5-4 Hz band after the cue is dominated by eye movements | The three unused EOG channels alone give 77.8% there; in 8-30 Hz the EEG is not affected (72.2% after removing EOG, 68.4% before) |
 | Single-seed differences below about 1.5 points on BCI are not reliable | The spread between seeds is 0.7 to 1.3 points |
 
 ### The three datasets side by side (this model, final epoch)
@@ -559,13 +790,17 @@ python -m pip install -r src/ourexpv26mix/requirements.txt
 LIU=/workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data
 OUT=/workspaces/datadisk/databci/bciupperlimbactionexperiment/ourexpv26mix/outputs
 
-# Leave one subject out: 47 folds
+# The default: imagery against rest, leave one subject out, 46 folds
 python -u -m src.ourexpv26mix.train.run_loso \
-  --data-dir "$LIU" --output "$OUT/Version26Mix_LOSO_seed12345.json"
+  --data-dir "$LIU" --output "$OUT/Version26Mix_ImageryRest_liu2024_LOSO_seed12345.json"
 
-# Within subject: 10 folds for each of the 47 subjects
+# The same task within subject: 10 folds for each of the 46 subjects
 python -u -m src.ourexpv26mix.train.run_within \
-  --data-dir "$LIU" --output "$OUT/Version26Mix_Within_seed12345.json"
+  --data-dir "$LIU" --output "$OUT/Version26Mix_ImageryRest_liu2024_Within_seed12345.json"
+
+# Left against right, as in version 24: 47 subjects
+python -u -m src.ourexpv26mix.train.run_loso --task left-right \
+  --data-dir "$LIU" --output "$OUT/Version26Mix_LeftRight_liu2024_LOSO_seed12345.json"
 ```
 
 `--data-dir` is the folder MOABB created (`MNE-liu2024-data`); its `files`
@@ -577,12 +812,13 @@ Options of both commands:
 |---|---|
 | `--dataset {liu2024,jia2019,bci2a}` | Dataset to read. Default `liu2024`. |
 | `--subjects 1 2 3` | Run only these held-out subjects (LOSO) or subjects (within). LOSO still trains on all the others. |
-| `--window START STOP` | Analysed window in seconds from the imagery onset. Default `0 4` for liu2024, `0 3.5` for jia2019, `0 2` for bci2a. |
+| `--window START STOP` | Analysed window in seconds from the imagery onset. Default `0 1.9` for liu2024 imagery-rest, `0 4` for liu2024 left-right, `0 3.5` for jia2019, `0 2` for bci2a. |
 | `--paths graph temporal` | Ablation: use only these paths of the model (graph, wide, temporal). |
 | `--node-signal {off,power,timed,mixed}` | Give the graph nodes features learned from the electrode signals. Default off. |
 | `--readout {mean,electrode}` | How the graph head reads out the nodes. Default mean. |
 | `--layers N` | Hybrid blocks in the graph head. Default 3 (versions 23 to 25: 2). |
 | `--node-time-attention N` | Transformer blocks over the time steps of every node's signal features. Default 0. |
+| `--task {left-right,imagery-rest}` | What is classified. Default `imagery-rest` for liu2024 (the only dataset that has it), `left-right` for bci2a and jia2019. |
 | `--tangent-features` | Add tangent-space covariance to the node and edge features. Off by default. |
 | `--low-frequency` | Add a path that classifies from the 0.5-4 Hz potentials. Off by default. |
 | `--target-calibration` / `--no-target-calibration` | Leave one subject out only: after a warm-up, also train on the unlabelled test subject with checked pseudo-labels. **On by default.** |
@@ -590,7 +826,7 @@ Options of both commands:
 | `--shuffle-labels` | Control run: permute the training labels. |
 | `--epochs` | Epochs per model (default 20 for leave one subject out, 60 within subject). |
 | `--exclude-subjects 4 13` | Leave these subjects out of the experiment entirely, from training and from testing. |
-| `--all-subjects` | Also use the subjects left out by default: the three duplicated recordings of liu2024 (5, 15, 49), or subject 4 of bci2a. |
+| `--all-subjects` | Also use the subjects left out by default: for liu2024 the three duplicated recordings (5, 15, 49) and, in imagery-rest, subject 6; for bci2a subject 4. |
 | `--seed`, `--device`, `--quiet` | As in version 23. |
 | `--folds`, `--split-seed` | Within-subject run only, as in version 23. |
 
@@ -603,7 +839,7 @@ python -u -m src.ourexpv26mix.train.run_loso --dataset bci2a \
 ```
 
 Tests: `python -m unittest discover -s src/ourexpv26mix/tests -t .`
-(43 tests; three of them read real recordings and are skipped when those are
+(44 tests; three of them read real recordings and are skipped when those are
 not on the machine).
 
 ## 2. The Liu 2024 files
@@ -745,7 +981,8 @@ train/               leave-one-subject-out and within-subject runs
 data/jia2019.py      NEW in version 26: the Jia 2019 reader
 data/roi.py          NEW in version 26: motor-area features
 train/calibration.py NEW in version 26: target calibration
-tests/               43 tests
+analysis/screen.py   NEW in version 26: screening of data preparations with a linear classifier
+tests/               44 tests
 ```
 
 | File | Change from version 23 |

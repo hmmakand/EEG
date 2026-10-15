@@ -63,11 +63,13 @@ class ModelTests(unittest.TestCase):
 
     def test_input_size_follows_the_dataset(self):
         config = ModelConfig.for_data(liu2024_config())
-        self.assertEqual((config.num_electrodes, config.signal_samples), (29, 1000))
+        self.assertEqual((config.num_electrodes, config.signal_samples), (29, 475))
         self.assertEqual(config, ModelConfig())
+        left_right = ModelConfig.for_data(liu2024_config(task="left_right"))
+        self.assertEqual(left_right.signal_samples, 1000)
         self.assertEqual(ModelConfig.for_data(bci2a_config()), BCI2A)
         generator = torch.Generator().manual_seed(1)
-        batch = Batch.from_data_list([random_graph(generator, 29, 1000) for _ in range(3)])
+        batch = Batch.from_data_list([random_graph(generator, 29, 475) for _ in range(3)])
         torch.manual_seed(0)
         out = call(EEGGraphModel(config), batch)
         self.assertEqual(tuple(out.shape), (3, 2))

@@ -20,12 +20,13 @@ epoch start in 1,929 of the 2,000 trials, at the epoch start in 23, and
 between 2.2 s and 3.7 s in 48. Each trial's own marker is therefore used.
 """
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import mne
 import numpy as np
 
-from .config import DataConfig
+from .config import IMAGERY_REST, DataConfig
 from .recordings import Trial
 
 EEG_CHANNELS = ("FP1", "FP2", "Fz", "F3", "F4", "F7", "F8", "FCz", "FC3", "FC4", "FT7", "FT8", "Cz", "C3", "C4",
@@ -98,7 +99,29 @@ def cut_trials(eeg, marker, labels, subject: int, config: DataConfig) -> list[Tr
     return trials
 
 
+def imagery_and_rest(trials: list[Trial], config: DataConfig) -> list[Trial]:
+    """Two samples per trial: a stretch of the imagery (label 1) and a stretch of the break after it (label 0).
+
+    Both come from the same epoch and are placed by the trial's own imagery
+    onset. A trial whose break does not fit into the epoch (the imagery started
+    late) gives no sample at all, so that the two classes stay balanced. The
+    hand that was imagined is not used. `trial_id` is 2 * trial for the
+    imagery and 2 * trial + 1 for the rest sample.
+    """
+    rate = config.sample_rate
+    imagery, rest = (int(round(IMAGERY_REST[key] * rate)) for key in ("imagery_start", "rest_start"))
+    length = config.window_offsets[1]
+    samples = []
+    for trial in trials:
+        if trial.onset + rest + length > len(trial.signal):
+            continue
+        samples.append(replace(trial, onset=trial.onset + imagery, label=1, trial_id=2 * trial.trial_id))
+        samples.append(replace(trial, onset=trial.onset + rest, label=0, trial_id=2 * trial.trial_id + 1))
+    return samples
+
+
 def read_trials(data_dir, subject: int, config: DataConfig) -> list[Trial]:
     """The 40 trials of one subject, in recording order."""
     eeg, marker = read_recording(subject_file(data_dir, subject))
-    return cut_trials(eeg, marker, read_labels(data_dir), subject, config)
+    trials = cut_trials(eeg, marker, read_labels(data_dir), subject, config)
+    return imagery_and_rest(trials, config) if config.task == "imagery_rest" else trials

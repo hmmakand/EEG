@@ -7,7 +7,7 @@ import torch
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
-from ..data import DataConfig, build_subject_graphs
+from ..data import DataConfig, build_subject_graphs, liu2024_config
 from ..data.roi import channel_names
 from ..model import EEGGraphModel, ModelConfig
 from .config import TrainConfig
@@ -92,9 +92,10 @@ EVALUATION = ("The result is the score after the final epoch; no test label is u
               "is optimistically biased and is recorded for comparison only.")
 
 
-def run_loso(data_dir, data_config: DataConfig = DataConfig(), model_config: ModelConfig | None = None,
+def run_loso(data_dir, data_config: DataConfig | None = None, model_config: ModelConfig | None = None,
              config: TrainConfig = TrainConfig(), held_out_subjects=None) -> dict:
     """Every subject in `held_out_subjects` (default: all) is the test subject of one fold."""
+    data_config = data_config or liu2024_config()
     if config.target_calibration and channel_names(data_config.dataset) is None:
         print(f"Target calibration is switched off: {data_config.dataset} has no channel names", flush=True)
         config = replace(config, target_calibration=False)

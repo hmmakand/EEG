@@ -13,7 +13,7 @@ class ModelConfig:
     num_electrodes: int = 29    # every graph lists the same electrodes in the same order
     node_features: int = 6      # band powers per electrode
     edge_features: int = 2      # phase-locking value and covariance per electrode pair
-    signal_samples: int = 1000  # analysed samples per electrode
+    signal_samples: int = 475   # analysed samples per electrode (1.9 s at 250 Hz)
     num_classes: int = 2
     low_samples: int = 0        # samples of the low-frequency signal per electrode; 0 = no low-frequency path
     # The paths whose logits are added. All three is the model; fewer is an ablation.

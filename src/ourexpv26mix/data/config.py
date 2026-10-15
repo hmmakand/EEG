@@ -13,8 +13,16 @@ LIU2024_ALL_SUBJECTS = tuple(range(1, 51))
 # With both members of a pair, leave-one-subject-out trains on the test data.
 LIU2024_DUPLICATES = {5: 4, 15: 11, 49: 47}
 LIU2024_SUBJECTS = tuple(s for s in LIU2024_ALL_SUBJECTS if s not in LIU2024_DUPLICATES)
+# Imagery against rest: the imagery of subject 6 starts late in almost every trial, so that the break
+# is cut off by the end of the epoch; one of its 40 trials is usable.
+LIU2024_IMAGERY_REST_EXCLUDED = (6,)
 JIA2019_SUBJECTS = tuple(range(1, 16))
 DATASETS = ("liu2024", "jia2019", "bci2a")
+TASKS = ("left_right", "imagery_rest")
+# imagery_rest: seconds from the trial's imagery onset at which the two samples start, and their length.
+# The imagery lasts 4 s and the break 2 s; the first second of each is left out, and the length is
+# what remains of the break inside the 8 s epoch for a trial with the usual timing.
+IMAGERY_REST = dict(imagery_start=1.0, rest_start=4.0, seconds=1.9)
 JIA2019_TRIAL_SECONDS = 6.832        # 1,708 samples at 250 Hz; the shortest published epoch is 3,500 samples at 512 Hz
 JIA2019_WINDOW = (0.0, 3.5)          # from the cue, 3 s into the epoch, almost to the end of the epoch
 
@@ -27,6 +35,12 @@ class DataConfig:
     num_channels: int = 29              # EEG electrodes, in the order of the reader
     sample_rate: int = 250              # of the trials handed to the pipeline
     trial_seconds: float = 8.0          # length of the stretch that is read and filtered
+    # What is classified:
+    #   "left_right"    left-hand against right-hand imagery (label 0 / 1): every dataset
+    #   "imagery_rest"  liu2024 only, and the default of liu2024_config(): a stretch of the imagery
+    #                   (label 1) against a stretch of the break that follows it (label 0), two
+    #                   samples per trial; see IMAGERY_REST
+    task: str = "left_right"
     # bci2a only. None reads every session that contains trials.
     session_indices: tuple[int, ...] | None = None
 
@@ -54,6 +68,8 @@ class DataConfig:
     def __post_init__(self):
         if self.dataset not in DATASETS:
             raise ValueError(f"dataset must be one of {DATASETS}")
+        if self.task not in TASKS or (self.task == "imagery_rest" and self.dataset != "liu2024"):
+            raise ValueError(f"task must be one of {TASKS}; imagery_rest is defined for liu2024 only")
         if not self.subjects or len(set(self.subjects)) != len(self.subjects):
             raise ValueError("subjects must be a non-empty list without repeats")
         if self.low_band is not None and (not 0 < self.low_band[0] < self.low_band[1]
@@ -94,11 +110,21 @@ class DataConfig:
 def liu2024_config(all_subjects: bool = False, **overrides) -> DataConfig:
     """Liu et al. 2024: acute stroke patients, 29 electrodes, 40 trials each.
 
-    A trial is one 8 s epoch of the published recording. The imagery lasts
-    4 s; all of it is analysed. The 47 distinct recordings are used unless
-    `all_subjects` is set, which adds the three copies (see LIU2024_DUPLICATES).
+    The default task is imagery against rest (`task="imagery_rest"`), the
+    experiment with the best result on this dataset: two samples of 1.9 s per
+    trial, 46 subjects (the three copies and subject 6 are left out).
+
+    `task="left_right"` gives the experiment of version 24: a trial is one 8 s
+    epoch, the 4 s of imagery are analysed, 47 subjects.
+
+    `all_subjects` adds the subjects that are left out by default.
     """
+    overrides = {"task": "imagery_rest", **overrides}
     subjects = LIU2024_ALL_SUBJECTS if all_subjects else LIU2024_SUBJECTS
+    if overrides["task"] == "imagery_rest":
+        overrides = {"window_seconds": (0.0, IMAGERY_REST["seconds"]), **overrides}
+        if not all_subjects:
+            subjects = tuple(s for s in subjects if s not in LIU2024_IMAGERY_REST_EXCLUDED)
     return replace(DataConfig(subjects=subjects), **overrides)
 
 
