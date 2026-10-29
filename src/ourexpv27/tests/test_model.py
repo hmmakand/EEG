@@ -1,4 +1,5 @@
 """The classifier and its three paths."""
+from typing import Any
 import unittest
 
 import torch
@@ -19,6 +20,8 @@ def call(model, batch):
 
 
 class ModelTests(unittest.TestCase):
+    batch: Any      # a torch_geometric Batch: its Data attributes are added at run time, unknown to the type checker
+
     @classmethod
     def setUpClass(cls):
         torch.set_num_threads(1)

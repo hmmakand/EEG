@@ -1,10 +1,10 @@
 """PA-TCNet built with the paper's settings, from the original model code."""
 from .original.model import PATCNet
-from .settings import DATASETS, ModelSettings, flattened_features
+from .settings import DATASETS, DatasetSettings, ModelSettings, flattened_features
 
 
-def build_model(dataset: str, model: ModelSettings = ModelSettings()) -> PATCNet:
-    settings = DATASETS[dataset]
+def build_model(dataset: str, model: ModelSettings = ModelSettings(), settings: DatasetSettings | None = None) -> PATCNet:
+    settings = settings or DATASETS[dataset]
     return PATCNet(embedding_dim=model.embedding, depth=model.depth,
                    temporal_filters_per_branch=model.temporal_filters_per_branch,
                    spatial_multiplier=model.spatial_multiplier, first_pool_size=model.pool,

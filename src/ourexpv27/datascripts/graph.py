@@ -26,7 +26,7 @@ def band_powers(window, config: DataConfig):
 
 def phase_locking(window):
     """[samples, channels] -> [channels, channels] phase-locking value, zero diagonal."""
-    phases = np.angle(hilbert(window, axis=0))
+    phases = np.angle(np.asarray(hilbert(window, axis=0)))   # asarray: scipy's stubs type hilbert's result wrongly
     channels = window.shape[1]
     matrix = np.zeros((channels, channels))
     for source in range(channels):

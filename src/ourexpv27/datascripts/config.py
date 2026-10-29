@@ -23,9 +23,9 @@ LIU2024_SUBJECTS = tuple(s for s in LIU2024_ALL_SUBJECTS
                          if s not in LIU2024_DUPLICATES and s not in LIU2024_TOO_FEW_TRIALS)   # 46 patients
 
 # ---- BCI Competition IV 2a ----------------------------------------------------
-# Subject 4 is left out, as in versions 7 to 23: its file has a different session layout
-# and it was not part of the experiments the settings come from.
-BCI2A_SUBJECTS = (1, 2, 3, 5, 6, 7, 8, 9)
+# All nine subjects. Versions 7 to 23 left subject 4 out (its file has fewer sessions);
+# the reader skips the sessions without trials, so subject 4 is read like the others.
+BCI2A_SUBJECTS = (1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 # ---- Jia 2019 -----------------------------------------------------------------
 JIA2019_SUBJECTS = tuple(range(1, 16))
@@ -95,7 +95,7 @@ def liu2024_config(**overrides) -> DataConfig:
 
 
 def bci2a_config(**overrides) -> DataConfig:
-    """BCI Competition IV 2a: 8 healthy subjects, 22 electrodes; left against right hand, 144 trials each.
+    """BCI Competition IV 2a: 9 healthy subjects, 22 electrodes; left against right hand, 144 trials each.
 
     A trial is read from 2 s before the cue to 2 s after it; the 2 s after the cue are analysed.
     """

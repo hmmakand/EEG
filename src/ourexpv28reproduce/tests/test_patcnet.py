@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -11,9 +12,9 @@ from ..evaluation.complexity import environment, model_complexity
 from ..papers.patcnet.channels import ROI_GROUPS, channel_info
 from ..papers.patcnet.network import build_model
 from ..papers.patcnet.original.physiology import build_class_templates, compute_roi_features
-from ..papers.patcnet.preparation import load_subject, prepare_trials
-from ..papers.patcnet.settings import DATASETS, XW_STROKE_SUBJECTS, TrainingSettings, flattened_features
-from ..papers.patcnet.training import fold_scores, run_fold, stopping_epoch
+from ..papers.patcnet.preparation import load_comparison_subject, load_subject, prepare_trials
+from ..papers.patcnet.settings import DATASETS, XW_STROKE_SUBJECTS, TrainingSettings, dataset_settings, flattened_features
+from ..papers.patcnet.training import fold_scores, loader, run_fold, stopping_epoch
 
 LIU = Path(os.environ.get("LIU2024_DATA", "/workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data"))
 JIA = Path(os.environ.get("JIA2019_DATA", "/workspaces/datadisk/databci/eegdata/jia2019"))
@@ -44,7 +45,7 @@ class PATCNetTests(unittest.TestCase):
 
     def test_model_shapes(self):
         torch.manual_seed(0)
-        for dataset, shape in (("liu2024", (30, 1000)), ("jia2019", (63, 1708))):
+        for dataset, shape in (("liu2024", (30, 1000)), ("jia2019", (63, 1708)), ("bci2a", (22, 500))):
             model = build_model(dataset).eval()
             with torch.no_grad():
                 self.assertEqual(tuple(model(torch.randn(3, *shape)).shape), (3, 2))
@@ -60,6 +61,54 @@ class PATCNetTests(unittest.TestCase):
         self.assertEqual(roi.shape, (6, 4000))
         templates, thresholds = build_class_templates(roi, np.array([0, 1] * 3), 2, floor=0.5)
         self.assertEqual((templates.shape, thresholds.shape), ((2, 4000), (2,)))
+
+    def test_evaluation_keeps_singleton_remainder(self):
+        tensors = (torch.arange(9), torch.arange(9))
+        self.assertEqual(sum(len(x) for x, _ in loader(tensors, 8, False)), 9)
+        self.assertEqual(sum(len(x) for x, _ in loader(tensors, 8, True)), 8)
+
+    def test_bci_preparation_and_roi(self):
+        rng = np.random.default_rng(12)
+        trials = [Trial(rng.normal(size=(1000, 22)) * 10, 500, y, 1, i)
+                  for i, y in enumerate([0, 1] * 10)]
+        with patch("src.ourexpv28reproduce.papers.patcnet.preparation.READERS") as readers:
+            readers["bci2a"].read_trials.return_value = trials
+            x, y = load_subject("unused", "bci2a", 1)
+        self.assertEqual(x.shape, (20, 22, 500))
+        self.assertTrue(0.1 < x.std() < 100)
+        self.assertEqual(compute_roi_features(x, channel_info("bci2a"))["roi_vector"].shape, (20, 2000))
+
+    def test_within_subject_folds_and_reporting(self):
+        from ..papers.patcnet import experiment, command
+        from ..evaluation.figures import folds_of, pooled
+        x = np.zeros((40, 29, 475), dtype=np.float32)
+        groups = np.repeat(np.arange(20), 2)
+        y = np.array([0, 1] * 20)
+        def fake_fold(xs, ys, xt, yt, *args):
+            self.assertEqual((len(xs), len(xt)), (36, 4))
+            h = [dict(loss=1., accuracy=1., predictions=yt.tolist(), scores=yt.tolist())]
+            return dict(fold_scores(h, yt.tolist(), 30), labels=yt.tolist(),
+                        training_seconds=1., peak_gpu_memory_bytes=None)
+        with patch.object(experiment, "load_comparison_subject", return_value=(x, y, groups)), \
+             patch.object(experiment, "run_fold", side_effect=fake_fold), \
+             patch.object(experiment, "model_complexity", return_value={}):
+            result = experiment.run("unused", "liu2024", held_out=[1], protocol="within", show_progress=False)
+        folds = result["results"]["1"]["folds"]
+        self.assertEqual(len(folds_of(result)), 10)
+        self.assertEqual(sorted(i for f in folds for i in f["test_index"]), list(range(40)))
+        from ..datascripts.version27 import fold_indices, SUBJECTS
+        self.assertEqual(result["cohort_subjects"], list(SUBJECTS["liu2024"]))
+        self.assertEqual(result["cohort"], "version27")
+        self.assertEqual(result["class_names"], ["rest", "imagery"])
+        for f, (train, test) in zip(folds, fold_indices(groups, y)):
+            self.assertEqual(f["train_index"], train.tolist())
+            self.assertEqual(f["test_index"], test.tolist())
+            self.assertFalse(set(groups[train]) & set(groups[test]))
+            self.assertFalse(set(f["train_index"]) & set(f["test_index"]))
+        self.assertEqual(len(pooled(result, "labels")), 40)
+        self.assertEqual(result["cost"]["training_seconds_total"], 10.)
+        self.assertEqual(result["summary"]["final_epoch"]["accuracy"], 1.)
+        self.assertTrue(command.summary_text(result))
 
     def test_scores_follow_the_published_protocol(self):
         # Loss stops improving after epoch 2; with patience 3 the code stops at epoch 5.
@@ -100,6 +149,56 @@ class PATCNetTests(unittest.TestCase):
             self.assertEqual(len(result[f"{key}_scores"]), 4)
         self.assertEqual(result["final_epoch_predictions"], (np.array(result["final_epoch_scores"]) > 0.5).astype(int).tolist())
         self.assertGreater(result["training_seconds"], 0)
+
+    def test_bci_pgtc_fold_keeps_all_test_trials(self):
+        from dataclasses import replace
+        rng = np.random.default_rng(3)
+        x = rng.normal(size=(25, 22, 500)).astype(np.float32)
+        y = np.arange(25) % 2
+        result = run_fold(x[:16], y[:16], x[16:], y[16:], channel_info("bci2a"),
+                          replace(DATASETS["bci2a"], warmup_epochs=1), torch.device("cpu"),
+                          training=TrainingSettings(epochs=2, batch_size=8), show_progress=False)
+        self.assertEqual(len(result["labels"]), 9)
+        self.assertEqual(len(result["final_epoch_scores"]), 9)
+        self.assertTrue(np.isfinite(result["test_loss_per_epoch"]).all())
+
+    def test_comparison_subjects_and_model_shape(self):
+        from ..datascripts.version27 import SUBJECTS
+        from ..papers.patcnet.experiment import subjects_of
+        for dataset, count in (("liu2024", 46), ("bci2a", 9), ("jia2019", 15)):
+            self.assertEqual(subjects_of(dataset, "version27"), SUBJECTS[dataset])
+            self.assertEqual(len(SUBJECTS[dataset]), count)
+        settings = dataset_settings("liu2024")
+        model = build_model("liu2024", settings=settings).eval()
+        with torch.no_grad():
+            self.assertEqual(model(torch.randn(3, 29, 475)).shape, (3, 2))
+        info = channel_info("liu2024", "version27")
+        self.assertEqual(len(info["channel_names"]), 29)
+        self.assertEqual(info["roi_groups"]["midline"], ["FCz", "Cz"])
+        self.assertEqual(len(subjects_of("liu2024", "published")), 24)
+        self.assertEqual(len(subjects_of("liu2024", "distinct")), 23)
+
+    def test_real_comparison_liu_samples_and_groups(self):
+        if not liu2024.subject_file(LIU, 2).is_file():
+            self.skipTest("Liu recordings unavailable")
+        from ..datascripts.version27 import read_samples, fold_indices
+        samples = read_samples(LIU, "liu2024", 2)
+        x, y, groups = load_comparison_subject(LIU, "liu2024", 2)
+        self.assertEqual(x.shape, (len(samples), 29, 475))
+        np.testing.assert_array_equal(y, [s.label for s in samples])
+        np.testing.assert_array_equal(groups, [s.group for s in samples])
+        self.assertEqual(y.tolist(), [v for _ in range(len(y) // 2) for v in (1, 0)])
+        self.assertTrue(np.isfinite(x).all())
+        for train, test in fold_indices(groups, y):
+            self.assertFalse(set(groups[train]) & set(groups[test]))
+        from dataclasses import replace
+        settings = replace(dataset_settings("liu2024"), warmup_epochs=1)
+        train, test = fold_indices(groups, y)[0]
+        record = run_fold(x[train], y[train], x[test], y[test], channel_info("liu2024", "version27"),
+                          settings, torch.device("cpu"), training=TrainingSettings(epochs=2, batch_size=8),
+                          show_progress=False)
+        self.assertEqual(record["labels"], y[test].tolist())
+        self.assertTrue(np.isfinite(record["test_loss_per_epoch"]).all())
 
     def test_complexity(self):
         state = torch.get_rng_state()

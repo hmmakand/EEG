@@ -7,27 +7,67 @@ arXiv:2604.16554. Code: `src/temp/PA-TCNet-main` (model, PGTC, ROI templates,
 training loop; no data loaders, no settings file, no utilities).
 
 Status: **ready to run** (specification, data preparation, model, training
-and scoring). No full run has been made yet.
+and scoring), including BCI2a and within-subject extensions. No full run has been made yet.
 
-## How to run
+## Default: comparison with version 27
+
+PATCNet defaults to `--cohort version27`: the same subjects, task labels, windows, trial groups
+and ten within-subject test folds as version 27, through `datascripts/version27.py`.
+PATCNet preprocessing (8–30 Hz, common average reference, baseline removal, microvolts), model and
+adaptation training are retained. The input dimensions/classifier are adjusted to the shared samples.
+
+| Dataset | Subjects | Task | Model input |
+|---|---|---|---|
+| Liu 2024 | 46; exclude 5, 6, 15, 49 | rest (0) vs imagery (1), two 1.9 s samples per usable trial | 29 × 475 |
+| BCI2a | all 9 | left (0) vs right (1), 2 s from cue | 22 × 500 |
+| Jia 2019 | all 15 | left (0) vs right (1), full epoch | 63 × 1708 |
+
+Liu imagery starts 1 s after its own trial onset and rest starts 4 s after it. Trials without a
+complete rest window are skipped, exactly as in version 27. Both samples of a trial stay in the
+same fold. The same stratified trial splitting function/seed (42) is used by the other baselines.
+Nine folds form the labeled source set and one is the unlabeled PGTC target/test set.
+
+Liu's 29-channel montage excludes the all-zero CPz reference. Its PGTC midline ROI therefore uses
+FCz and Cz; the left/right ROIs remain unchanged. No electrode is fabricated. Jia remains
+confidence-only because channel names are unavailable. **PGTC uses unlabeled test inputs during
+training** in both protocols; report this transductive adaptation when comparing methods.
+
+Use `final_epoch` as the main metric. The test-selected `as_published` score is diagnostic only.
+Describe these experiments as **PATCNet evaluated under our common experimental protocol**, rather
+than reproduction of the paper's reported numbers.
+
+From the repository root, using an environment with the project dependencies:
 
 ```bash
-cd /workspaces/EEG && source .venv/bin/activate
-OUT=/workspaces/datadisk/databci/bciupperlimbactionexperiment/ourexpv28reproduce/outputs
-
-python -u -m src.ourexpv28reproduce.run --paper patcnet --dataset jia2019 --quiet \
-  --data-dir /workspaces/datadisk/databci/eegdata/jia2019 --output-dir "$OUT"
-python -u -m src.ourexpv28reproduce.run --paper patcnet --dataset liu2024 --quiet \
-  --data-dir /workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data --output-dir "$OUT"
-python -u -m src.ourexpv28reproduce.run --paper patcnet --dataset liu2024 --cohort distinct --quiet \
-  --data-dir /workspaces/datadisk/databci/eegdata/moabb/MNE-liu2024-data --output-dir "$OUT"
+bash src/ourexpv28reproduce/papers/patcnet/run_all.sh
 ```
 
-`--cohort published` (the default) is the paper's 24 subjects, including the
-duplicated pair 47/49; `--cohort distinct` leaves out 49. Each run writes
-`<output-dir>/patcnet/<dataset>/PATCNet_<dataset>_<cohort>_LOSO_seed2.json` and
-a readable `.summary.txt` next to it. On a GTX 1060 a Liu 2024 fold takes about
-16 minutes (200 epochs), so a Liu 2024 run takes about 6 hours.
+This runs all three datasets under `loso` and `within`, saves logs, and draws figures.
+The script defaults to `/root/autodl-tmp/Experiment/EEG/` paths. Override `LIU`, `BCI`, `JIA`, `OUT`
+to use another location. `--save-models` remains unsupported.
+
+For a single run:
+
+```bash
+python -u -m src.ourexpv28reproduce.run --paper patcnet --dataset liu2024 \
+  --cohort version27 --protocol within --quiet --data-dir "$LIU" --output-dir "$OUT"
+```
+
+Results are named `PATCNet_<dataset>_version27_<LOSO|Within>_seed2.json`, with a `.summary.txt`.
+Within-subject JSON includes trial groups, split indices, fold histories and pooled subject scores.
+Results using paper inputs have different names, so they are not mixed with comparison outputs.
+
+## Optional original-paper inputs
+
+`--cohort published` explicitly selects the original left/right stroke samples and the paper's
+24-patient Liu cohort (including the duplicate 47/49). `--cohort distinct` removes subject 49.
+These modes use Liu 30 × 1000 and Jia 63 × 1708 inputs. The paper reports LOSO only.
+The remaining paper-specific specifications below describe these optional reproduction modes.
+
+```bash
+python -u -m src.ourexpv28reproduce.run --paper patcnet --dataset liu2024 \
+  --cohort published --protocol loso --quiet --data-dir "$LIU" --output-dir "$OUT"
+```
 
 ### The two scores of every run
 
@@ -40,7 +80,7 @@ each epoch. Two scores are computed from the same run:
 | **final epoch** | The score after epoch 200 | No |
 
 Training is the same either way (stopping only shortens it), so one run gives
-both exactly. The "as published" score is the one to set beside the paper's
+both from the same training trajectory (checkpoint utility behavior is assumed; see the audit below). For explicit paper-cohort LOSO runs, the "as published" score is the one to set beside the paper's
 numbers; the "final epoch" score is the honest one. Accuracy, balanced
 accuracy, macro F1, Cohen's kappa, macro precision, macro recall and AUC are
 recorded for both.
@@ -73,7 +113,7 @@ with several files also `roc_comparison.png`.
 
 ## 1. What the paper reports
 
-Leave one subject out only; no within-subject experiment. Accuracy, Cohen's
+The paper reports leave one subject out only; no within-subject experiment. Our BCI2a and within-subject runs are extensions. Accuracy, Cohen's
 kappa, recall, precision, F1 (and AUC in the tables), averaged over the
 leave-one-subject-out rounds.
 
@@ -162,5 +202,41 @@ channels.py      the ROI groups and channel names, in the structure the code exp
 network.py       the model built with the paper's settings
 training.py      one leave-one-subject-out fold, ported from train.py; both scores
 experiment.py    all folds of a dataset, as train_loso
+command.py       the command-line options, result name and summary table
 original/        model.py, pgtc.py, physiology.py from the published code, unchanged
 ```
+
+## Methodology audit and extensions
+
+Checked against the local paper PDF and `src/temp/PA-TCNet-main/Model/`:
+
+- `original/model.py`, `pgtc.py`, and `physiology.py` match the released files except for attribution comments.
+- Model settings match Table 2. Stroke adaptation parameters match Table 3 (rather than the conflicting CLI defaults).
+- The source warm-up, Adam settings, source/target loss, target-loader cycling, eval-mode initialization,
+  train-mode target refresh after each optimizer step, and persistence of accepted pseudo-labels match `train.py`.
+- Fixed evaluation/calibration loaders to retain singleton final batches. The original only drops those batches
+  for training; the previous port also dropped them in evaluation/calibration.
+- The original reads target labels for checkpoint selection and early stopping despite the paper's description
+  of label-free target adaptation. `as_published` preserves this test-selected diagnostic; use `final_epoch`
+  as the main score selected without test labels. Both use **unlabeled test inputs** for transductive PGTC.
+- The release omits loaders, settings, `BestModelSaver`, and `EarlyStopping`. Early-stop behavior and
+  checkpoint tie handling are conventional assumptions, so exact numerical reproduction is not guaranteed.
+- ICA remains omitted because component selection is unspecified. Jia remains confidence-only because electrode
+  names are unavailable. The paper's pooling, band (8–30 Hz), CAR and baseline removal are retained.
+
+The CLI accepts `--dataset {liu2024,bci2a,jia2019}`, `--protocol {loso,within}` (default LOSO),
+and `--cohort {version27,published,distinct}` (default version27).
+
+BCI2a uses version 27's nine subjects (all of them), binary left/right labels, 22 EEG channels and
+2 seconds after the cue (500 samples). All nine motor ROI electrodes are present. Adaptation uses the released
+code's defaults: alpha 0.95, confidence 0.90, ROI floor 0.70, warm-up 10; the paper has no BCI2a settings.
+The MATLAB BCI2a reader returns microvolts already: the PATCNet preparation leaves that scale unchanged,
+whereas Liu/Jia are converted from volts to microvolts. This handling is local to PATCNet.
+
+Within subject uses version 27's grouped stratified trial folds in the default comparison mode.
+The optional paper modes have one sample per original trial and use ten stratified trial folds.
+Predictions are pooled over test folds per subject, then dataset metrics average subjects.
+
+Validation: the original-paper tests remain, with additional checks for shared cohorts, Liu input shape,
+exact grouped fold indices, and real Liu comparison sample labels/groups and short PGTC training.
+Full 200-epoch experiments have not been launched.

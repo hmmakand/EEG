@@ -14,7 +14,7 @@ class DatasetSettings:
     subjects: tuple[int, ...]
     channels: int              # model input [channels, samples] (paper, Table 1)
     samples: int
-    window_seconds: tuple[float, float]   # analysed stretch, from the reader's onset; None = the whole epoch
+    window_seconds: tuple[float, float] | None   # analysed stretch, from the reader's onset; None = the whole epoch
     # Table 3 of the paper (the code's defaults in brackets)
     source_weight: float       # alpha: weight of the source loss after warm-up (code default 0.95)
     confidence: float          # tau_p: confidence threshold of a pseudo-label (code default 0.90)
@@ -28,6 +28,11 @@ class DatasetSettings:
 XW_STROKE_SUBJECTS = (2, 5, 8, 9, 11, 12, 14, 17, 21, 23, 24, 26, 27, 28, 30, 32, 33, 37, 38, 43, 44, 47, 49, 50)
 
 DATASETS = dict(
+    # Extension: version 27 subjects/window; PGTC defaults from the released code.
+    bci2a=DatasetSettings(name="BCI IV 2a (extension)", dataset="bci2a",
+                          subjects=(1, 2, 3, 4, 5, 6, 7, 8, 9), channels=22, samples=500,
+                          window_seconds=(0.0, 2.0), source_weight=0.95, confidence=0.90,
+                          roi_floor=0.70, warmup_epochs=10),
     liu2024=DatasetSettings(name="XW-Stroke", dataset="liu2024", subjects=XW_STROKE_SUBJECTS, channels=30,
                             samples=1000, window_seconds=(0.0, 4.0),
                             source_weight=0.98, confidence=0.60, roi_floor=0.50, warmup_epochs=25),
@@ -63,3 +68,20 @@ class TrainingSettings:
 def flattened_features(samples: int, model: ModelSettings = ModelSettings()) -> int:
     """The input size of the classification head, as train.py computes it."""
     return (samples // model.pool // model.pool) * model.embedding
+
+
+def dataset_settings(dataset: str, cohort: str = "version27") -> DatasetSettings:
+    """Common comparison inputs by default; original paper inputs remain explicit."""
+    from dataclasses import replace
+    from ...datascripts.version27 import SUBJECTS
+    settings = DATASETS[dataset]
+    if cohort == "version27":
+        dimensions = dict(liu2024=(29, 475), bci2a=(22, 500), jia2019=(63, 1708))
+        channels, samples = dimensions[dataset]
+        return replace(settings, subjects=SUBJECTS[dataset], channels=channels, samples=samples,
+                       window_seconds=None)
+    if cohort == "distinct" and dataset == "liu2024":
+        return replace(settings, subjects=tuple(s for s in settings.subjects if s != 49))
+    if cohort not in ("published", "distinct"):
+        raise ValueError(f"Unknown cohort: {cohort}")
+    return settings

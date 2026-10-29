@@ -1,0 +1,117 @@
+# Version 27: ablation of the branches, commands for the server
+
+Leave one subject out only (cross-patient decoding), seed 12345, the same subjects, samples and
+settings as the version 27 result. Every run keeps the 3-model ensemble, 20 epochs and the score
+after the final epoch; only the branches whose logits are added (--paths) or the target calibration
+(--no-target-calibration) change.
+
+The full model is run again first, on the same GPU as the ablations, so that every row of the table
+comes from the same machine (and the result file then also records AUC and kappa). If a result file
+of the same name exists, a time stamp is added to the new one; nothing is overwritten.
+
+Branches: graph = graph encoder (nonlinear, on the explicit descriptors), wide = linear branch
+(the descriptors straight to the class scores), temporal = temporal encoder (on the signal).
+
+## Setup (run once in every new terminal or tmux session)
+
+```bash
+cd /root/autodl-tmp/Experiment/EEG
+LIU=/root/autodl-tmp/Experiment/EEG/data/MNE-liu2024-data
+BCI=/root/autodl-tmp/Experiment/EEG/data/bci-competition-iv-data-sets-2a
+JIA=/root/autodl-tmp/Experiment/EEG/data/jia2019
+OUT=/root/autodl-tmp/Experiment/EEG/outputs/ourexpv27ablation
+LOG="$OUT/logs"; mkdir -p "$LOG"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
+## 1. Liu 2024, imagery against rest (the main ablation)
+
+```bash
+# Full model (the method): graph + wide + temporal, with target calibration
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" 2>&1 | tee "$LOG/ablation_liu2024_full.log"
+
+# One branch alone
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths graph    2>&1 | tee "$LOG/ablation_liu2024_graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths wide     2>&1 | tee "$LOG/ablation_liu2024_wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths temporal 2>&1 | tee "$LOG/ablation_liu2024_temporal.log"
+
+# One branch removed
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths graph temporal 2>&1 | tee "$LOG/ablation_liu2024_no-wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths wide temporal  2>&1 | tee "$LOG/ablation_liu2024_no-graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --paths graph wide     2>&1 | tee "$LOG/ablation_liu2024_no-temporal.log"
+
+# Full model without target calibration
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset liu2024 --data-dir "$LIU" --output-dir "$OUT" --no-target-calibration 2>&1 | tee "$LOG/ablation_liu2024_no-calibration.log"
+
+# ROC comparison and per-run figures, after the runs
+python -m src.ourexpv27.analysis.figures "$OUT"/liu2024/Version27_liu2024_ImageryRest_LOSO*_seed12345*.json
+```
+
+## 2. BCI IV 2a, left against right hand
+
+```bash
+# Full model (the method)
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" 2>&1 | tee "$LOG/ablation_bci2a_full.log"
+
+# One branch alone
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths graph    2>&1 | tee "$LOG/ablation_bci2a_graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths wide     2>&1 | tee "$LOG/ablation_bci2a_wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths temporal 2>&1 | tee "$LOG/ablation_bci2a_temporal.log"
+
+# One branch removed
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths graph temporal 2>&1 | tee "$LOG/ablation_bci2a_no-wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths wide temporal  2>&1 | tee "$LOG/ablation_bci2a_no-graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --paths graph wide     2>&1 | tee "$LOG/ablation_bci2a_no-temporal.log"
+
+# Full model without target calibration
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset bci2a --data-dir "$BCI" --output-dir "$OUT" --no-target-calibration 2>&1 | tee "$LOG/ablation_bci2a_no-calibration.log"
+
+# ROC comparison and per-run figures, after the runs
+python -m src.ourexpv27.analysis.figures "$OUT"/bci2a/Version27_bci2a_LeftRight_LOSO*_seed12345*.json
+```
+
+## 3. Jia 2019, left against right hand (optional)
+
+The full model is at chance here (47.83%), so an ablation shows little. Target calibration is
+always off on this dataset (no channel names), so there is no calibration row.
+
+```bash
+# Full model (the method)
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" 2>&1 | tee "$LOG/ablation_jia2019_full.log"
+
+# One branch alone
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths graph    2>&1 | tee "$LOG/ablation_jia2019_graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths wide     2>&1 | tee "$LOG/ablation_jia2019_wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths temporal 2>&1 | tee "$LOG/ablation_jia2019_temporal.log"
+
+# One branch removed
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths graph temporal 2>&1 | tee "$LOG/ablation_jia2019_no-wide.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths wide temporal  2>&1 | tee "$LOG/ablation_jia2019_no-graph.log"
+python -u -m src.ourexpv27.train.run_loso --quiet --dataset jia2019 --data-dir "$JIA" --output-dir "$OUT" --paths graph wide     2>&1 | tee "$LOG/ablation_jia2019_no-temporal.log"
+
+# ROC comparison and per-run figures, after the runs
+python -m src.ourexpv27.analysis.figures "$OUT"/jia2019/Version27_jia2019_LeftRight_LOSO*_seed12345*.json
+```
+
+## Result files
+
+One per run, in "$OUT"/<dataset>/ (the ablation is in the name; the full model has none):
+
+```
+Version27_<dataset>_<Task>_LOSO_seed12345.json                        full model
+Version27_<dataset>_<Task>_LOSO_Paths-graph_seed12345.json            graph encoder alone
+Version27_<dataset>_<Task>_LOSO_Paths-wide_seed12345.json             linear branch alone
+Version27_<dataset>_<Task>_LOSO_Paths-temporal_seed12345.json         temporal encoder alone
+Version27_<dataset>_<Task>_LOSO_Paths-graph-temporal_seed12345.json   without the linear branch
+Version27_<dataset>_<Task>_LOSO_Paths-wide-temporal_seed12345.json    without the graph encoder
+Version27_<dataset>_<Task>_LOSO_Paths-graph-wide_seed12345.json       without the temporal encoder
+Version27_<dataset>_<Task>_LOSO_NoCalibration_seed12345.json          without target calibration
+```
+
+Each has a .summary.txt next to it with the scores per subject and the mean.
+
+## Tests (optional, before the runs)
+
+```bash
+python -m unittest discover -s src/ourexpv27/tests -t .
+```

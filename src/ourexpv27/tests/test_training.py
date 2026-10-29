@@ -243,7 +243,7 @@ class TrainingTests(unittest.TestCase):
 
     def test_command_line_writes_into_the_folder_of_the_dataset(self):
         with tempfile.TemporaryDirectory() as folder:
-            write_bci2a_recordings(folder, subjects=(1, 2, 3, 5, 6, 7, 8, 9))
+            write_bci2a_recordings(folder, subjects=(1, 2, 3, 4, 5, 6, 7, 8, 9))
             out = Path(folder) / "out"
             within_main(["--dataset", "bci2a", "--data-dir", folder, "--output-dir", str(out), "--subjects", "1",
                          "--folds", "2", "--epochs", "1", "--device", "cpu", "--quiet", "--save-models"])

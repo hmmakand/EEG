@@ -18,14 +18,14 @@ The published code then stops training when the loss of the held-out subject
 has not improved for 30 epochs, and reports the epoch with the highest
 accuracy on the held-out subject. That choice is made with the test labels.
 Here every fold runs all 200 epochs and keeps the evaluation of every epoch;
-from these, both scores are computed exactly (see fold_scores()):
+from these, both scores are reconstructed (see fold_scores()):
 
   as_published  the highest accuracy up to the epoch at which the published
                 code would have stopped (the code's protocol)
   final_epoch   the score after the last epoch, chosen without test labels
                 (fixed number of epochs; our protocol)
 
-Training does not depend on when it would have stopped, so one run gives both.
+Training before the stopping epoch is shared; the missing utility implementations prevent an exact checkpoint-selection guarantee.
 
 Recorded for reporting, without changing the training: the loss and accuracy
 on the source batches per epoch (training mode), the test loss and accuracy
@@ -51,10 +51,10 @@ from .settings import DatasetSettings, ModelSettings, TrainingSettings
 
 
 def loader(tensors, batch_size, shuffle):
-    """As build_dynamic_dataloaders: drop the last batch only if it would hold a single sample."""
+    """Drop singleton batches only in training; evaluation and calibration visit every trial."""
     size = min(batch_size, len(tensors[0]))
     return DataLoader(TensorDataset(*tensors), batch_size=size, shuffle=shuffle,
-                      drop_last=len(tensors[0]) > 1 and len(tensors[0]) % size == 1)
+                      drop_last=shuffle and len(tensors[0]) > 1 and len(tensors[0]) % size == 1)
 
 
 class Calibration:
@@ -115,7 +115,7 @@ def run_fold(x_source, y_source, x_target, y_target, channel_info, settings: Dat
              model_settings: ModelSettings = ModelSettings(), training: TrainingSettings = TrainingSettings(),
              description="", show_progress: bool = True) -> dict:
     """Train on the source subjects, adapt to the target subject, and evaluate it after every epoch."""
-    model = build_model(settings.dataset, model_settings).to(device)
+    model = build_model(settings.dataset, model_settings, settings=settings).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=training.learning_rate, weight_decay=training.weight_decay)
     source_loader = loader((torch.tensor(x_source), torch.tensor(y_source)), training.batch_size, shuffle=True)
     indices = torch.arange(len(x_target))

@@ -122,3 +122,7 @@ memory_profile/
 
 #AI 
 .claude/
+
+#git
+eeg-git
+eeg-git.pub

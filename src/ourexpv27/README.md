@@ -262,7 +262,7 @@ motor imagery. As in versions 7 to 23:
   subject, 72 per class.
 - A trial is read from 2 s before the cue to 2 s after it; one sample per
   trial, the 2 s after the cue (500 samples).
-- Subjects 1, 2, 3, 5, 6, 7, 8 and 9; subject 4 is left out.
+- Subjects 1, 2, 3, 4, 5, 6, 7, 8 and 9.
 
 This dataset has no imagery-against-rest task here; it is included as the
 dataset on which the method was developed and on which differences between
