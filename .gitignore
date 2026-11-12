@@ -126,3 +126,11 @@ memory_profile/
 #git
 eeg-git
 eeg-git.pub
+
+# Experiment versions: publish only version 29
+/src/ourexperimentversion*
+/src/ourexpv*
+!/src/ourexpv29/
+
+# ZIP archives
+*.zip
