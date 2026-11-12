@@ -1,8 +1,8 @@
 """Every rule that turns a recording into graphs. Changing a value changes the experiment.
 
-Two datasets, each with its task:
+Supported datasets and tasks:
 
-    liu2024   acute stroke patients: imagery (1) against rest (0)       liu2024_config()
+    liu2024   acute stroke patients: left hand (0) against right hand (1)       liu2024_config()
     bci2a     healthy subjects: left hand (0) against right hand (1)    bci2a_config()
     jia2019   stroke patients: left hand (0) against right hand (1)     jia2019_config()
 """
@@ -16,11 +16,10 @@ LIU2024_ALL_SUBJECTS = tuple(range(1, 51))
 # recording (same EEG, different patient entry): 5 of 4, 15 of 11, 49 of 47.
 # With both members of a pair, leave-one-subject-out trains on the test data.
 LIU2024_DUPLICATES = {5: 4, 15: 11, 49: 47}
-# The imagery of subject 6 starts late in almost every trial, so that the break
-# is cut off by the end of the epoch; one of its 40 trials is usable.
-LIU2024_TOO_FEW_TRIALS = (6,)
+# Full-trial decoding retains subject 6: no rest-window requirement remains.
+LIU2024_TOO_FEW_TRIALS = ()
 LIU2024_SUBJECTS = tuple(s for s in LIU2024_ALL_SUBJECTS
-                         if s not in LIU2024_DUPLICATES and s not in LIU2024_TOO_FEW_TRIALS)   # 46 patients
+                         if s not in LIU2024_DUPLICATES)   # 47 patients
 
 # ---- BCI Competition IV 2a ----------------------------------------------------
 # All nine subjects. Versions 7 to 23 left subject 4 out (its file has fewer sessions);
@@ -37,18 +36,14 @@ JIA2019_SAMPLE_SECONDS = JIA2019_TRIAL_SECONDS    # the whole epoch, as MOABB an
 class DataConfig:
     # ---- which samples ------------------------------------------------------
     dataset: str = "liu2024"
-    class_names: tuple[str, str] = ("rest", "imagery")      # label 0, label 1
+    class_names: tuple[str, str] = ("left hand", "right hand")      # label 0, label 1
     subjects: tuple[int, ...] = LIU2024_SUBJECTS
     num_channels: int = 29              # EEG electrodes, in the order of the dataset's reader
     sample_rate: int = 250
     trial_seconds: float = 8.0          # the stretch that is read and filtered
-    sample_seconds: float = 1.9         # the stretch that is analysed
+    sample_seconds: float = 8.0         # the stretch that is analysed
 
-    # liu2024: two samples per trial, placed by the trial's own imagery onset (seconds from the
-    # onset). The imagery lasts 4 s and the break 2 s; the first second of each is left out, and
-    # sample_seconds is what remains of the break inside the epoch for a trial with the usual timing.
-    imagery_start: float = 1.0
-    rest_start: float = 4.0
+    # Liu2024 uses one complete 8-second trial per left/right sample.
 
     # bci2a and jia2019: one sample per trial; the analysed stretch starts cue_seconds after the
     # start of what is read (bci2a: the cue, 2 s after the trial start; jia2019: the epoch start).
@@ -90,7 +85,7 @@ class DataConfig:
 
 
 def liu2024_config(**overrides) -> DataConfig:
-    """Liu et al. 2024: 46 acute stroke patients, 29 electrodes; imagery against rest, two samples per trial."""
+    """Liu et al. 2024: 47 acute stroke patients, 29 electrodes; one full trial per left/right sample."""
     return replace(DataConfig(), **overrides)
 
 

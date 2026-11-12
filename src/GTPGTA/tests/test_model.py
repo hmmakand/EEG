@@ -8,7 +8,7 @@ from torch_geometric.data import Batch, Data
 from ..model import EEGGraphModel, ModelConfig
 
 
-def random_graph(generator, n=29, samples=475):
+def random_graph(generator, n=29, samples=2000):
     pairs = torch.tensor([[i, j] for i in range(n) for j in range(n) if i != j]).T
     return Data(x=torch.rand(n, 6, generator=generator) + 0.1, edge_index=pairs,
                 edge_attr=torch.rand(pairs.size(1), 2, generator=generator),
@@ -31,7 +31,8 @@ class ModelTests(unittest.TestCase):
     def test_size_shape_and_gradients(self):
         torch.manual_seed(0)
         model = EEGGraphModel()
-        self.assertEqual(sum(p.numel() for p in model.parameters()), 64862)
+        # The 8-second input increases the temporal classifier width.
+        self.assertEqual(sum(p.numel() for p in model.parameters()), 68126)
         self.assertEqual(len(model.layers), 3)
         out = call(model, self.batch)
         self.assertEqual(tuple(out.shape), (4, 2))

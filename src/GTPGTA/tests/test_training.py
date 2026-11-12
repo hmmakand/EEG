@@ -42,7 +42,7 @@ class ValidationTests(unittest.TestCase):
         TrainConfig(epochs=1, calibration_warmup_epochs=10).validate()
 
     def test_subject_splits_all_datasets(self):
-        for dataset, counts in [('liu2024',(36,9)), ('bci2a',(6,2)), ('jia2019',(11,3))]:
+        for dataset, counts in [('liu2024',(36,10)), ('bci2a',(6,2)), ('jia2019',(11,3))]:
             subjects = dataset_config(dataset).subjects
             for held in subjects:
                 train, val = split_subjects(subjects, held, 12345)
@@ -63,7 +63,7 @@ class ValidationTests(unittest.TestCase):
         with self.assertRaises(ValueError): stop.update(6,float('nan'))
 
     def test_within_outer_folds_preserved_and_trials_disjoint(self):
-        trials = np.repeat(np.arange(40), 2); labels = [0,1] * 40
+        trials = np.arange(40); labels = [0,1] * 20
         outer = fold_indices(trials, labels, 10, 42)
         nested = list(nested_indices(trials, labels, 10, 42))
         tested=[]
@@ -75,7 +75,7 @@ class ValidationTests(unittest.TestCase):
             self.assertFalse(set(trials[train]) & set(trials[test]))
             self.assertFalse(set(trials[val]) & set(trials[test]))
             tested.extend(test)
-        self.assertEqual(sorted(tested),list(range(80)))
+        self.assertEqual(sorted(tested),list(range(40)))
         with self.assertRaises(ValueError): list(nested_indices(trials,labels,2))
 
     def test_alignment_does_not_fit_validation_or_test_signal(self):
@@ -134,7 +134,7 @@ class ValidationTests(unittest.TestCase):
             model.load_state_dict(checkpoint['state_dict'])
             out=result_path(temp,'liu2024','LOSO',12345)
             write_result(result,out)
-            self.assertTrue(out.name.startswith('Version29_'))
+            self.assertTrue(out.name.startswith('Version29_liu2024_LeftRight8s_'))
             self.assertNotIn('highest_epoch',json.loads(out.read_text())['summary'])
 
     def test_within_run_refits_on_train_plus_validation(self):

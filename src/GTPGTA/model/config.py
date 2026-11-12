@@ -1,4 +1,4 @@
-"""Model sizes. These are the values of the reported result; none is an untested alternative."""
+"""Model sizes. Signal length is derived from the dataset configuration."""
 from dataclasses import dataclass
 
 PATHS = ("graph", "wide", "temporal")
@@ -10,7 +10,7 @@ class ModelConfig:
     num_electrodes: int = 29    # every graph lists the same electrodes in the same order
     node_features: int = 6      # band powers per electrode
     edge_features: int = 2      # phase-locking value and covariance per electrode pair
-    signal_samples: int = 475   # analysed samples per electrode (1.9 s at 250 Hz)
+    signal_samples: int = 2000  # full Liu2024 trial (8 s at 250 Hz)
     num_classes: int = 2
     # The paths whose logits are added. All three is the method; fewer is an ablation.
     paths: tuple[str, ...] = PATHS

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-TASK_NAMES = dict(liu2024="ImageryRest", bci2a="LeftRight", jia2019="LeftRight")
+TASK_NAMES = dict(liu2024="LeftRight8s", bci2a="LeftRight", jia2019="LeftRight")
 
 
 def result_path(output_dir, dataset: str, protocol: str, seed: int, variant: str = "") -> Path:

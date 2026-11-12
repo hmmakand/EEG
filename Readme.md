@@ -40,13 +40,15 @@ Obtain the datasets separately and replace the example paths below with your loc
 
 | Dataset argument | Classification task | Expected layout under `--data-dir` |
 |---|---|---|
-| `liu2024` | Motor imagery versus rest | `edffile/sub-01/eeg/sub-01_task-motor-imagery_eeg.edf`, etc.; a parent directory containing `files/edffile/` is also accepted |
+| `liu2024` | Left versus right motor imagery (full 8-second trials) | `edffile/sub-01/eeg/sub-01_task-motor-imagery_eeg.edf`, etc.; a parent directory containing `files/edffile/` is also accepted |
 | `jia2019` | Left versus right motor imagery | `exp1-S1-left.mat`, `exp1-S1-right.mat`, etc. |
 | `bci2a` | Left versus right motor imagery | `A01T.mat` through `A09T.mat` |
 
 ## Running experiments
 
 Execute all commands from the repository root with the environment activated.
+
+Liu2024 uses one 8-second window per trial: 29 channels × 2,000 samples at 250 Hz. Labels are left hand (0) and right hand (1), giving 20 trials per class per recording. The default cohort retains 47 participants after excluding duplicate recordings: subject 5 duplicates subject 4, subject 15 duplicates subject 11, and subject 49 duplicates subject 47. New result filenames use `LeftRight8s`.
 
 ### Liu2024: leave-one-subject-out
 
@@ -87,7 +89,9 @@ DEVICE=auto bash src/GTPGTA/run_all.sh \
 
 The wrapper defaults to CUDA when `DEVICE` is unset. Set `DEVICE=cpu` for CPU execution.
 
-## Reported Liu2024 results
+## Previously reported Liu2024 results
+
+These supplied results predate the switch to full 8-second left/right trials and do not establish performance for the current configuration. New experiments are required for the updated task.
 
 Results are reported as mean ± standard deviation across participants. Bold indicates the best mean and underline the second-best mean in each column.
 

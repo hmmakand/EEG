@@ -30,17 +30,17 @@ class DataTests(unittest.TestCase):
     def test_default_rules(self):
         config = liu2024_config()
         self.assertEqual(config, DataConfig())
-        self.assertEqual((len(config.subjects), set(LIU2024_ALL_SUBJECTS) - set(config.subjects)), (46, {5, 6, 15, 49}))
+        self.assertEqual((len(config.subjects), set(LIU2024_ALL_SUBJECTS) - set(config.subjects)), (47, {5, 15, 49}))
         self.assertEqual(config.subjects, LIU2024_SUBJECTS)
-        self.assertEqual((config.num_channels, config.trial_samples, config.window_samples), (29, 2000, 475))
-        self.assertEqual((config.class_names, config.task), (("rest", "imagery"), "imagery (1) against rest (0)"))
+        self.assertEqual((config.num_channels, config.trial_samples, config.window_samples), (29, 2000, 2000))
+        self.assertEqual((config.class_names, config.task), (("left hand", "right hand"), "right hand (1) against left hand (0)"))
         bci = bci2a_config()
         self.assertEqual((bci.subjects, bci.num_channels, bci.trial_samples, bci.window_samples),
                          (BCI2A_SUBJECTS, 22, 1000, 500))
         self.assertEqual(bci.task, "right hand (1) against left hand (0)")
         self.assertEqual(dataset_config("bci2a"), bci)
         self.assertEqual([(m.num_electrodes, m.signal_samples) for m in map(ModelConfig.for_data, (config, bci))],
-                         [(29, 475), (22, 500)])
+                         [(29, 2000), (22, 500)])
         with self.assertRaises(ValueError):
             dataset_config("other")
         self.assertEqual(dataset_config("jia2019").num_channels, 63)
@@ -58,21 +58,19 @@ class DataTests(unittest.TestCase):
             self.assertEqual(subject_file(Path(folder) / "files", 7, CONFIG), expected)
             self.assertEqual(subject_file(folder, 7, BCI2A_CONFIG), Path(folder) / "A07T.mat")
 
-    def test_two_samples_per_trial_placed_by_the_trials_own_onset(self):
-        # The fourth trial's imagery starts too late for its break to fit: it gives no sample.
+    def test_full_trials_preserve_order_and_alternating_hand_labels(self):
         self.assertEqual([(s.trial_id, s.sample_id, s.label, s.start) for s in self.samples],
-                         [(0, 0, 1, 502 + 250), (0, 1, 0, 502 + 1000), (1, 2, 1, 250), (1, 3, 0, 1000),
-                          (2, 4, 1, 505 + 250), (2, 5, 0, 505 + 1000), (4, 8, 1, 503 + 250), (4, 9, 0, 503 + 1000)])
-        self.assertEqual(sum(s.label for s in self.samples), 4)                 # balanced
-        eeg, _ = recording()
+                         [(i, i, i % 2, 0) for i in range(8)])
+        eeg, marker = recording()
         for sample in self.samples:
             self.assertEqual((sample.signal.shape, sample.subject_id), ((2000, 29), 5))
             np.testing.assert_array_equal(sample.signal, eeg[4000 * sample.trial_id:4000 * (sample.trial_id + 1):2])
-        self.assertEqual({analysed_signal(s, CONFIG).shape for s in self.samples}, {(475, 29)})
-        # A stray imagery marker late in an epoch is ignored: the first one is the onset.
-        eeg, marker = recording()
+        self.assertEqual({analysed_signal(s, CONFIG).shape for s in self.samples}, {(2000, 29)})
+        # Phase timing does not trim the window or drop/relabel late trials.
+        marker[4001] = 0
         marker[3004] = 2
-        self.assertEqual([s.start for s in cut_samples(eeg, marker, 5, CONFIG)], [s.start for s in self.samples])
+        again = cut_samples(eeg, marker, 5, CONFIG)
+        self.assertEqual([(s.label, s.start) for s in again], [(i % 2, 0) for i in range(8)])
 
     def test_bci2a_trials(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -96,20 +94,20 @@ class DataTests(unittest.TestCase):
         eeg, marker = recording()
         with self.assertRaises(ValueError):          # not a whole number of epochs
             cut_samples(eeg[:-10], marker[:-10], 1, CONFIG)
-        without_imagery = marker.copy()
-        without_imagery[4000 + 1] = 0
-        with self.assertRaises(ValueError):
-            cut_samples(eeg, without_imagery, 1, CONFIG)
         without_start = marker.copy()
         without_start[4000] = 0
         with self.assertRaises(ValueError):
             cut_samples(eeg, without_start, 1, CONFIG)
         with self.assertRaises(ValueError):          # 300 Hz does not divide 500 Hz
             cut_samples(eeg, marker, 1, replace(CONFIG, sample_rate=300))
-        with fake_recordings() as reader:            # no trial with room for both samples
-            reader.side_effect = lambda path: recording(onsets=(1830, 1900))
+        for bad in (replace(CONFIG, sample_seconds=1.9), replace(CONFIG, trial_seconds=4.0)):
             with self.assertRaises(ValueError):
-                read_samples("folder", 1, CONFIG)
+                cut_samples(eeg, marker, 1, bad)
+        with self.assertRaises(ValueError):
+            cut_samples(eeg, marker[:-1], 1, CONFIG)
+        with fake_recordings() as reader:
+            reader.side_effect = lambda path: recording(onsets=(1830, 1900))
+            self.assertEqual([s.label for s in read_samples("folder", 1, CONFIG)], [0, 1])
 
     def test_alignment_gives_identity_mean_covariance_without_labels(self):
         aligned = align_subject(self.samples, CONFIG)
@@ -129,11 +127,11 @@ class DataTests(unittest.TestCase):
     def test_graph_contents(self):
         with fake_recordings():
             graphs = build_subject_graphs("folder", 1, CONFIG)
-        self.assertEqual([int(g.y) for g in graphs], [1, 0] * 4)
+        self.assertEqual([int(g.y) for g in graphs], [0, 1] * 4)
         graph = graphs[0]
         self.assertEqual((tuple(graph.x.shape), tuple(graph.edge_index.shape), tuple(graph.edge_attr.shape),
                           tuple(graph.signal.shape), tuple(graph.roi.shape)),
-                         ((29, 6), (2, 812), (812, 2), (29, 475), (1, 4)))
+                         ((29, 6), (2, 812), (812, 2), (29, 2000), (1, 4)))
         self.assertEqual((graph.subject_id, graph.trial_id, graph.sample_id), (1, 0, 0))
         self.assertFalse((graph.edge_index[0] == graph.edge_index[1]).any())
         self.assertTrue((graph.x > 0).all())
@@ -143,7 +141,7 @@ class DataTests(unittest.TestCase):
         self.assertTrue(((dense[..., 0] >= 0) & (dense[..., 0] <= 1)).all())  # phase-locking value
         signal = graph.signal.double()
         torch.testing.assert_close(dense[..., 1].double().fill_diagonal_(0),
-                                   (signal @ signal.T / 475).fill_diagonal_(0), atol=1e-5, rtol=1e-4)
+                                   (signal @ signal.T / 2000).fill_diagonal_(0), atol=1e-5, rtol=1e-4)
         # A graph depends on the subject's other samples only through the alignment.
         with fake_recordings():
             samples = read_samples("folder", 1, CONFIG)
@@ -165,16 +163,16 @@ class DataTests(unittest.TestCase):
     @unittest.skipUnless(HAVE_REAL_DATA, "Liu 2024 recordings are not on this machine")
     def test_real_recordings(self):
         graphs = build_subject_graphs(REAL_DATA, 1)                              # the default dataset
-        self.assertEqual((len(graphs), sum(int(g.y) for g in graphs)), (80, 40))
-        covariance = np.mean([(g.signal.double() @ g.signal.double().T / 475).numpy() for g in graphs], axis=0)
+        self.assertEqual((len(graphs), sum(int(g.y) for g in graphs)), (40, 20))
+        covariance = np.mean([(g.signal.double() @ g.signal.double().T / 2000).numpy() for g in graphs], axis=0)
         np.testing.assert_allclose(covariance, np.eye(29), atol=1e-4)           # alignment
-        self.assertEqual(len(read_samples(REAL_DATA, 40, CONFIG)), 64)    # eight late trials are dropped
+        self.assertEqual(len(read_samples(REAL_DATA, 40, CONFIG)), 40)    # late trials remain complete windows
         # The recordings that are left out as duplicates are copies of the ones that are kept.
         for copy, original in LIU2024_DUPLICATES.items():
             a, _ = read_recording(subject_file(REAL_DATA, copy, CONFIG))
             b, _ = read_recording(subject_file(REAL_DATA, original, CONFIG))
             self.assertGreater(np.corrcoef(a[:, 0], b[:, 0])[0, 1], 0.9999)
-        self.assertEqual(len(cut_samples(*read_recording(subject_file(REAL_DATA, 6, CONFIG)), 6, CONFIG)), 2)
+        self.assertEqual(len(cut_samples(*read_recording(subject_file(REAL_DATA, 6, CONFIG)), 6, CONFIG)), 40)
 
 
 if __name__ == "__main__":

@@ -44,7 +44,7 @@ def covariance(window):
 def build_graph(sample: Sample, config: DataConfig) -> Data:
     """`sample` must already be aligned (see signal.align_subject).
 
-    With C electrodes and W analysed samples (29 and 475 for liu2024, 22 and 500 for bci2a):
+    With C electrodes and W analysed samples (29 and 2000 for liu2024, 22 and 500 for bci2a):
 
     x          [C, 6]          band powers of each electrode
     edge_index [2, C * (C-1)]  every ordered electrode pair, no self-loops

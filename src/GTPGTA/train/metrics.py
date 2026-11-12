@@ -1,6 +1,6 @@
 """Classification metrics of one subject, and their mean over subjects.
 
-Class order [0, 1] follows DataConfig.class_names (rest/imagery, or left/right hand).
+Class order [0, 1] follows DataConfig.class_names (left/right hand).
 """
 import numpy as np
 from sklearn.metrics import (balanced_accuracy_score, cohen_kappa_score, confusion_matrix, f1_score,

@@ -10,7 +10,7 @@ from ..datascripts.bci2a import subject_file as bci2a_file
 SUBJECTS = (1, 2, 3)
 CONFIG = liu2024_config(subjects=SUBJECTS)
 BCI2A_CONFIG = bci2a_config(subjects=SUBJECTS, session_indices=(1, 2))   # session 0 also has trials; it is left out
-ONSETS = (1004, 1, 1010, 1830, 1006)     # samples at 500 Hz: usual, at the epoch start, usual, too late, usual
+ONSETS = (1004, 1, 1010, 1830, 1006, 1900, 1000, 1000)     # samples at 500 Hz: usual, at the epoch start, usual, too late, usual
 
 
 def recording(onsets=ONSETS, seed=0, scale=1.0):

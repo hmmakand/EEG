@@ -18,7 +18,7 @@ from .output import models_folder, result_path, write_result
 
 def add_common_arguments(parser) -> None:
     parser.add_argument("--dataset", choices=DATASETS, default="liu2024",
-                        help="liu2024: imagery against rest (default); bci2a and jia2019: left against right hand")
+                        help="left against right hand; liu2024 uses full 8-second trials (default dataset)")
     parser.add_argument("--data-dir", type=Path, required=True,
                         help="liu2024: the MNE-liu2024-data folder; bci2a: the folder with A01T.mat ... A09T.mat; "
                              "jia2019: the folder with exp1-S1-left.mat ...")
