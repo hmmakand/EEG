@@ -138,3 +138,6 @@ eeg-git.pub
 # Only version 29 is published from src
 /src/*
 !/src/ourexpv29/
+
+# Local result comparison
+/Result_comaprison.md
