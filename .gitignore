@@ -136,3 +136,6 @@ eeg-git.pub
 
 # Local result comparison
 /Result_comaprison.md
+
+# Local result analysis notebook
+/resultanalysis.ipynb
