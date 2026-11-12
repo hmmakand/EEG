@@ -1,113 +1,118 @@
-Ourversionten -- base line (corrected: GATv2 on PLV 0.35 graphs, fair evaluation)
-ourversionthirteen -- baseline with eegdiffuser 
-ourversionfourteen -- baseline within cross subject -- pc data generation 
-ourexpv15 -- baseline within cross subject with global inclusion
-ourexpv16 -- baseline within cross subject with global inclusion+self-conditioning - autodl batch 16 for data generation
-ourexpv17 -- baseline within cross subject without global inclusion+self-conditioning - autodl batch 16 for data generation
-ourexpv18 -- is copied from ourecpv16 -- and include the custom model.
-ourexpv23 -- best model only (temporal encoder + graph head + wide path), reduced code base
-**New improvement over 80 percent reach first time in version 20**
+# GT-PGTA
 
-## Current results: version 10 (baseline) and version 23 (best model)
+GT-PGTA is a graph-temporal framework for EEG motor imagery decoding. The implementation is in [`src/GTPGTA`](src/GTPGTA) and supports leave-one-subject-out (LOSO) and within-subject experiments.
 
-Left hand versus right hand, BCI Competition IV 2a, subjects 1, 2, 3, 5, 6, 7, 8, 9.
-Both versions use the same trials, signal processing, splits, seed (12345) and
-evaluation; they differ in the model and in what the graph carries. Every score
-is taken once at the final epoch, with nothing selected on test trials.
+## Short abstract
 
-### Leave one subject out (LOSO)
+Learning motor imagery patterns that generalise across stroke participants is difficult when individual calibration labels are limited. GT-PGTA combines EEG connectivity, temporal signals, and explicit signal descriptors in a three-branch classifier. Its target adaptation procedure screens pseudo-labels using prediction confidence and source-derived motor-region patterns, preserves accepted supervision, and adjusts participant-level score bias. The reported transductive LOSO balanced accuracies are 72.15% on Liu2024 and 73.49% on Jia2019, suggesting that complementary signal representations and access to unlabelled target EEG can support cross-participant decoding.
 
-Train on seven subjects, test on the eighth. 20 epochs, three models per fold.
+## Method
 
-| Subject | Version 10 | Version 23 |
-|---|---:|---:|
-| S1 | 54.17% | 83.33% |
-| S2 | 52.08% | 71.53% |
-| S3 | 51.39% | 91.67% |
-| S5 | 49.31% | 68.75% |
-| S6 | 53.47% | 77.78% |
-| S7 | 56.94% | 66.67% |
-| S8 | 51.39% | 89.58% |
-| S9 | 59.72% | 92.36% |
-| **Mean accuracy** | **53.56%** | **80.21%** |
-| Balanced accuracy | 53.56% | 80.21% |
-| Macro F1 | 53.22% | 80.20% |
+- **Graph branch:** represents electrodes and their relationships using subband power, phase-locking, and covariance features.
+- **Temporal branch:** extracts patterns from aligned EEG with shallow convolutions.
+- **Wide branch:** maps explicit EEG descriptors directly to class scores through a linear layer.
+- **Target adaptation:** filters pseudo-labels by confidence and motor-region template agreement, retains accepted labels, and centres target-participant logits at inference.
 
-Result files: `ourexpv10/outputs/my_loso.json` and `ourexpv23/outputs/my_run.json`
-in `databci/bciupperlimbactionexperiment/`.
+## Installation
 
-### Within subject
+Use Python 3.10 or newer.
 
-Stratified 10-fold inside each subject, 60 epochs, three models per fold.
+```bash
+git clone https://github.com/hmmakand/EEG.git
+cd EEG
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r src/GTPGTA/requirements.txt
+```
 
-| Subject | Version 10 | Version 23 |
-|---|---:|---:|
-| S1 | 56.94% | 82.64% |
-| S2 | 53.47% | 77.08% |
-| S3 | 60.42% | 88.19% |
-| S5 | 50.69% | 65.97% |
-| S6 | 51.39% | 63.89% |
-| S7 | 56.94% | 69.44% |
-| S8 | 53.47% | 95.83% |
-| S9 | 63.89% | 95.83% |
-| **Mean accuracy** | **55.90%** | **79.86%** |
-| Balanced accuracy | 55.90% | 79.86% |
-| Macro F1 | 55.74% | 79.80% |
+The requirements include PyTorch, PyTorch Geometric, NumPy, SciPy, scikit-learn, tqdm, and MNE. For GPU execution, the environment must have a CUDA-compatible PyTorch installation. Use `--device cpu` to run without CUDA or `--device auto` to select the available device.
 
-Result files: `ourexpv10/outputs/my_within.json` and `ourexpv23/outputs/my_within.json`.
+For subsequent sessions, activate the existing environment:
 
-### All nine subjects (subject 4 included)
+```bash
+source .venv/bin/activate
+```
 
-Run with `--all-subjects`, seed 12345. In LOSO each fold trains on eight
-subjects (1152 trials) and tests on the ninth.
+## Dataset preparation
 
-| Subject | Version 10 LOSO | Version 23 LOSO | Version 10 within | Version 23 within |
-|---|---:|---:|---:|---:|
-| S1 | 55.56% | 81.94% | 68.75% | 83.33% |
-| S2 | 58.33% | 70.83% | 53.47% | 77.08% |
-| S3 | 52.78% | 87.50% | 60.42% | 89.58% |
-| S4 | 46.53% | 69.44% | 45.14% | 72.92% |
-| S5 | 47.22% | 68.75% | 50.69% | 65.28% |
-| S6 | 50.00% | 76.39% | 54.86% | 65.28% |
-| S7 | 58.33% | 68.06% | 53.47% | 69.44% |
-| S8 | 59.03% | 89.58% | 53.47% | 96.53% |
-| S9 | 61.11% | 90.28% | 59.03% | 95.83% |
-| **Mean accuracy** | **54.32%** | **78.09%** | **55.48%** | **79.48%** |
-| Balanced accuracy | 54.32% | 78.09% | 55.48% | 79.48% |
-| Macro F1 | 53.98% | 78.05% | 55.31% | 79.41% |
+Obtain the datasets separately and replace the example paths below with your local directories. Recordings are not included in this repository.
 
-Result files: `Version10Fixed_LOSO_AllSubjects_seed12345.json`,
-`Version10Fixed_Within_AllSubjects_seed12345.json` in `ourexpv10/outputs/`, and
-`Version23_LOSO_AllSubjects_seed12345.json`,
-`Version23_Within_AllSubjects_seed12345.json` in `ourexpv23/outputs/`.
+| Dataset argument | Classification task | Expected layout under `--data-dir` |
+|---|---|---|
+| `liu2024` | Motor imagery versus rest | `edffile/sub-01/eeg/sub-01_task-motor-imagery_eeg.edf`, etc.; a parent directory containing `files/edffile/` is also accepted |
+| `jia2019` | Left versus right motor imagery | `exp1-S1-left.mat`, `exp1-S1-right.mat`, etc. |
+| `bci2a` | Left versus right motor imagery | `A01T.mat` through `A09T.mat` |
 
-The nine-subject means are not directly comparable with the eight-subject
-means above: they average over one more test subject, and in LOSO the other
-eight subjects are trained with one more subject.
+## Running experiments
 
-### Notes
+Execute all commands from the repository root with the environment activated.
 
-- These are single runs. Over five seeds the LOSO mean is 53.5% for version 10
-  and 79.0% for version 23; a single run varies by about 1 to 1.5 points.
-- Chance is 50%.
-- Alignment and, in LOSO, logit centring use the test subject's trials without
-  their labels.
-- Details: `src/ourexperimentversionten/README.md` and `src/ourexpv23/README.md`.
+### Liu2024: leave-one-subject-out
 
-## Earlier comparison (superseded)
+```bash
+python -u -m src.GTPGTA.train.run_loso \
+  --dataset liu2024 \
+  --data-dir /path/to/MNE-liu2024-data \
+  --output-dir outputs/GTPGTA \
+  --epochs 100 --patience 15 --seed 12345 \
+  --device auto --save-models
+```
 
-The table below reported the best test epoch of each 14-trial fold. That
-selection gives about 73% even with randomly shuffled labels, so these numbers
-do not measure the models and must not be compared with the results above.
+### Liu2024: within-subject
 
-| Subject | Version 10 | Version 14 | Version 15 | Version 16 |
-|---|---:|---:|---:|---:|
-| S1 | 75.14% | 77.86% | 73.57% | 74.29% |
-| S2 | 73.62% | 76.38% | 73.52% | 74.76% |
-| S3 | 72.29% | 75.62% | 75.10% | 75.76% |
-| S5 | 72.90% | 75.05% | 70.81% | 71.52% |
-| S6 | 72.19% | 75.00% | 72.33% | 72.86% |
-| S7 | 74.43% | 72.86% | 75.48% | 79.10% |
-| S8 | 75.05% | 75.24% | 76.38% | 79.19% |
-| S9 | 79.90% | 79.86% | 82.10% | 76.38% |
-| Mean | 74.44% | 75.98% | 74.91% | 75.48% |
+```bash
+python -u -m src.GTPGTA.train.run_within \
+  --dataset liu2024 \
+  --data-dir /path/to/MNE-liu2024-data \
+  --output-dir outputs/GTPGTA \
+  --epochs 100 --patience 15 --seed 12345 \
+  --folds 10 --split-seed 42 \
+  --device auto --save-models
+```
+
+For Jia2019 or BCI2a, change `--dataset` to `jia2019` or `bci2a` and supply the matching data directory. Add `--subjects 1` to evaluate only subject 1; LOSO still requires the other participants as source data. Add `--quiet` to hide progress bars.
+
+### Run all datasets and both protocols
+
+The wrapper runs six experiments sequentially and saves final model checkpoints:
+
+```bash
+DEVICE=auto bash src/GTPGTA/run_all.sh \
+  /path/to/MNE-liu2024-data \
+  /path/to/bci2a \
+  /path/to/jia2019 \
+  outputs/GTPGTA
+```
+
+The wrapper defaults to CUDA when `DEVICE` is unset. Set `DEVICE=cpu` for CPU execution.
+
+## Reported Liu2024 results
+
+Results are reported as mean ± standard deviation across participants. Bold indicates the best mean and underline the second-best mean in each column.
+
+### LOSO
+
+| Model | Balanced accuracy (%) | Precision (%) | Macro F1 (%) | Cohen's κ | AUC |
+|---|---:|---:|---:|---:|---:|
+| Conformer | 52.74 ± 6.84 | 45.47 ± 22.32 | 40.44 ± 11.46 | 0.055 ± 0.137 | 0.598 ± 0.191 |
+| DBConformer | 67.36 ± 9.17 | 69.87 ± 9.31 | 66.09 ± 10.35 | 0.347 ± 0.183 | 0.760 ± 0.115 |
+| EEGNet | <u>68.05 ± 10.24</u> | <u>70.09 ± 10.44</u> | <u>66.65 ± 11.50</u> | <u>0.361 ± 0.205</u> | <u>0.766 ± 0.113</u> |
+| MSCFormer | 59.02 ± 7.19 | 60.78 ± 7.86 | 56.83 ± 8.45 | 0.180 ± 0.144 | 0.640 ± 0.100 |
+| MShallowConvNet | 61.11 ± 9.38 | 63.97 ± 11.74 | 58.33 ± 11.17 | 0.222 ± 0.188 | 0.701 ± 0.133 |
+| PA-TCNet | 61.48 ± 12.16 | 57.78 ± 20.69 | 56.09 ± 17.68 | 0.230 ± 0.243 | 0.717 ± 0.148 |
+| SlimSeiz | 60.64 ± 8.27 | 62.69 ± 9.51 | 58.65 ± 9.75 | 0.213 ± 0.165 | 0.671 ± 0.112 |
+| GT-PGTA (ours) | **72.15 ± 9.49** | **73.08 ± 10.05** | **71.93 ± 9.49** | **0.443 ± 0.190** | **0.787 ± 0.120** |
+
+### Within-subject
+
+| Model | Balanced accuracy (%) | Precision (%) | Macro F1 (%) | Cohen's κ | AUC |
+|---|---:|---:|---:|---:|---:|
+| Conformer | <u>75.63 ± 11.96</u> | <u>76.09 ± 12.05</u> | <u>75.51 ± 12.01</u> | <u>0.513 ± 0.239</u> | 0.816 ± 0.121 |
+| DBConformer | 72.35 ± 11.32 | 72.87 ± 11.33 | 72.11 ± 11.50 | 0.447 ± 0.226 | 0.783 ± 0.118 |
+| EEGNet | 75.37 ± 12.11 | 75.86 ± 12.17 | 75.21 ± 12.24 | 0.507 ± 0.242 | <u>0.817 ± 0.133</u> |
+| MSCFormer | 72.32 ± 13.78 | 72.52 ± 13.82 | 72.22 ± 13.85 | 0.446 ± 0.276 | 0.754 ± 0.146 |
+| MShallowConvNet | 73.95 ± 14.50 | 74.13 ± 14.51 | 73.87 ± 14.55 | 0.479 ± 0.290 | 0.792 ± 0.158 |
+| PA-TCNet | 74.50 ± 13.25 | 74.87 ± 14.41 | 73.69 ± 14.89 | 0.490 ± 0.265 | 0.796 ± 0.145 |
+| SlimSeiz | 67.33 ± 13.04 | 67.54 ± 13.11 | 67.16 ± 13.11 | 0.347 ± 0.261 | 0.707 ± 0.149 |
+| GT-PGTA (ours) | **77.92 ± 12.36** | **78.07 ± 12.39** | **77.88 ± 12.40** | **0.558 ± 0.247** | **0.839 ± 0.131** |
