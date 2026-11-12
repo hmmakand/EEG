@@ -4,7 +4,7 @@ GT-PGTA is a graph-temporal framework for EEG motor imagery decoding. The implem
 
 ## Short abstract
 
-Learning motor imagery patterns that generalise across stroke participants is difficult when individual calibration labels are limited. GT-PGTA combines EEG connectivity, temporal signals, and explicit signal descriptors in a three-branch classifier. Its target adaptation procedure screens pseudo-labels using prediction confidence and source-derived motor-region patterns, preserves accepted supervision, and adjusts participant-level score bias. The reported transductive LOSO balanced accuracies are 72.15% on Liu2024 and 73.49% on Jia2019, suggesting that complementary signal representations and access to unlabelled target EEG can support cross-participant decoding.
+Learning motor imagery patterns that generalise across stroke participants is difficult when individual calibration labels are limited. GT-PGTA combines EEG connectivity, temporal signals, and explicit signal descriptors in a three-branch classifier. Its target adaptation procedure screens pseudo-labels using prediction confidence and source-derived motor-region patterns, preserves accepted supervision, and adjusts participant-level score bias. The reported transductive LOSO balanced accuracies are 72.15% on Liu2024, suggesting that complementary signal representations and access to unlabelled target EEG can support cross-participant decoding.
 
 ## Method
 
