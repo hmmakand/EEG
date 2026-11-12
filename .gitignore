@@ -134,3 +134,7 @@ eeg-git.pub
 
 # ZIP archives
 *.zip
+
+# Only version 29 is published from src
+/src/*
+!/src/ourexpv29/
