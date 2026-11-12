@@ -139,3 +139,8 @@ eeg-git.pub
 
 # Local result analysis notebook
 /resultanalysis.ipynb
+
+# Local documentation and notebooks
+/src/GTPGTA/README.md
+/src/GTPGTA/abalation.txt
+/src/Notebooks/
