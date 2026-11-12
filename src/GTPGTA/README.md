@@ -68,11 +68,11 @@ A warning and `validity.valid_for_mi_comparison=false` are saved. Validation doe
 From the repository root, with the project environment activated:
 
 ```bash
-python -u -m src.ourexpv29.train.run_loso \
+python -u -m src.GTPGTA.train.run_loso \
   --dataset liu2024 --data-dir /path/to/MNE-liu2024-data \
   --output-dir outputs/v29 --epochs 100 --patience 15 --device cuda --save-models
 
-python -u -m src.ourexpv29.train.run_within \
+python -u -m src.GTPGTA.train.run_within \
   --dataset liu2024 --data-dir /path/to/MNE-liu2024-data \
   --output-dir outputs/v29 --epochs 100 --patience 15 --folds 10 --split-seed 42 \
   --device cuda --save-models
@@ -87,7 +87,7 @@ The existing `--paths` and `--no-target-calibration` (LOSO only) ablations remai
 Run all datasets and both protocols sequentially:
 
 ```bash
-bash src/ourexpv29/run_all.sh /path/to/MNE-liu2024-data /path/to/bci2a /path/to/jia2019 outputs/v29
+bash src/GTPGTA/run_all.sh /path/to/MNE-liu2024-data /path/to/bci2a /path/to/jia2019 outputs/v29
 ```
 
 `DEVICE=cpu` overrides the script's default CUDA device. The script saves final refit checkpoints.
@@ -107,6 +107,6 @@ and refit; graph construction is excluded. Model complexity remains single-model
 Version 27 analysis code expecting `highest_epoch` is not compatible with this intentional schema change.
 
 ```bash
-python -m src.ourexpv29.analysis.figures /path/to/Version29_result.json
-python -m unittest discover -s src/ourexpv29/tests -t .
+python -m src.GTPGTA.analysis.figures /path/to/Version29_result.json
+python -m unittest discover -s src/GTPGTA/tests -t .
 ```

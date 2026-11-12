@@ -127,17 +127,12 @@ memory_profile/
 eeg-git
 eeg-git.pub
 
-# Experiment versions: publish only version 29
-/src/ourexperimentversion*
-/src/ourexpv*
-!/src/ourexpv29/
-
 # ZIP archives
 *.zip
 
-# Only version 29 is published from src
+# Only GTPGTA is published from src
 /src/*
-!/src/ourexpv29/
+!/src/GTPGTA/
 
 # Local result comparison
 /Result_comaprison.md

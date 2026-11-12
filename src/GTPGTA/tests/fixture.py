@@ -31,7 +31,7 @@ def fake_recordings():
     def read(path):
         subject = int(str(path).split("sub-")[1][:2])
         return recording(seed=100 + subject, scale=1.0 + subject)
-    return mock.patch("src.ourexpv29.datascripts.liu2024.read_recording", side_effect=read)
+    return mock.patch("src.GTPGTA.datascripts.liu2024.read_recording", side_effect=read)
 
 
 def write_bci2a_recordings(folder, subjects=SUBJECTS):

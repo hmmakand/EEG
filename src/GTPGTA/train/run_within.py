@@ -1,7 +1,7 @@
 """Run the within-subject cross-validation and save the result as JSON.
 
-    python -m src.ourexpv29.train.run_within --data-dir /path/to/MNE-liu2024-data --output-dir outputs
-    python -m src.ourexpv29.train.run_within --dataset bci2a --data-dir /path/to/A0xT.mat/files --output-dir outputs
+    python -m src.GTPGTA.train.run_within --data-dir /path/to/MNE-liu2024-data --output-dir outputs
+    python -m src.GTPGTA.train.run_within --dataset bci2a --data-dir /path/to/A0xT.mat/files --output-dir outputs
 
 The result goes to <output-dir>/<dataset>/.
 """

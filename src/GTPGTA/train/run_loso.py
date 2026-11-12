@@ -1,7 +1,7 @@
 """Run the leave-one-subject-out experiment and save the result as JSON.
 
-    python -m src.ourexpv29.train.run_loso --data-dir /path/to/MNE-liu2024-data --output-dir outputs
-    python -m src.ourexpv29.train.run_loso --dataset bci2a --data-dir /path/to/A0xT.mat/files --output-dir outputs
+    python -m src.GTPGTA.train.run_loso --data-dir /path/to/MNE-liu2024-data --output-dir outputs
+    python -m src.GTPGTA.train.run_loso --dataset bci2a --data-dir /path/to/A0xT.mat/files --output-dir outputs
 
 The result goes to <output-dir>/<dataset>/.
 """

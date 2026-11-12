@@ -100,7 +100,7 @@ class ValidationTests(unittest.TestCase):
 
     def test_selection_stops_and_each_target_has_own_ensemble(self):
         config=replace(self.config,epochs=10,patience=2)
-        with patch('src.ourexpv29.train.validation.classification_metrics', return_value={'balanced_accuracy':.5}):
+        with patch('src.GTPGTA.train.validation.classification_metrics', return_value={'balanced_accuracy':.5}):
             result=select_epochs(self.graphs[1], {2:self.graphs[2],3:self.graphs[3]},self.model_config,
                                  config,torch.device('cpu'))
         self.assertEqual((result['selected_epoch'],result['stopped_epoch']), (1,3))
