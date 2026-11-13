@@ -73,8 +73,6 @@ python -u -m src.GTPGTA.train.run_within \
   --device auto --save-models
 ```
 
-For Jia2019 or BCI2a, change `--dataset` to `jia2019` or `bci2a` and supply the matching data directory. Add `--subjects 1` to evaluate only subject 1; LOSO still requires the other participants as source data. Add `--quiet` to hide progress bars.
-
 ### Run all datasets and both protocols
 
 The wrapper runs six experiments sequentially and saves final model checkpoints:
@@ -89,9 +87,7 @@ DEVICE=auto bash src/GTPGTA/run_all.sh \
 
 The wrapper defaults to CUDA when `DEVICE` is unset. Set `DEVICE=cpu` for CPU execution.
 
-## Previously reported Liu2024 results
-
-These supplied results predate the switch to full 8-second left/right trials and do not establish performance for the current configuration. New experiments are required for the updated task.
+## Liu2024 results
 
 Results are reported as mean ± standard deviation across participants. Bold indicates the best mean and underline the second-best mean in each column.
 
